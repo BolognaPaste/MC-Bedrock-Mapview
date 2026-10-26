@@ -45,24 +45,6 @@ Only the top block of each column is known, so overhangs, cave mouths and the un
 solid, and blocks are flat colours (no textures). `viewer/map3d.js` holds the renderer; `LOD`, `MAX_TILES` and
 `DMAX` at its top trade detail and memory for view distance.
 
-## Live link
-
-The **Live link** tab (under "Add a world by hand") receives live data from a companion plugin on your Minecraft
-server: online players show as green pins on open maps, changed chunks are drawn into the map tiles (2D and 3D
-update in place), and joins, chat and other events appear in the tab's activity list.
-
-**In-game pack (single-player and co-op worlds hosted on this PC).** The tab's "Install in Minecraft" button
-builds `Bedrock Map Live.mcpack` and opens it, so Minecraft imports it; "Show the .mcpack file" saves it to share
-with friends who also use the app. Then turn on Settings > Creator > Content Log File in Minecraft (the tab checks
-this and can turn it on while the game is closed), activate the pack on a world, and play. When the app sees a
-world with the pack open, it builds that world's map if there is none yet (the world is found as the one whose
-files changed last, and remembered from then on) and opens the map window behind the game; the tab has a switch to
-turn this off.
-The pack needs no cheats. World scripts cannot use the network, so it writes its messages to Minecraft's content
-log, which the app reads (`src-tauri/src/live_game.rs`); the pack's source is in `pack/`, and the app fills in its
-list of see-through blocks when it packages it. It sends online players every second, each changed chunk shortly
-after a block is placed, broken or blown up, and the chunks within 5 of each player once per session, so newly
-explored ground appears on the map. Only the host's PC gets the data; friends who join see nothing in their app.
 
 **Server plugins.** The app runs a small HTTP server for other plugins, on `127.0.0.1:8130` by default (only this
 computer). The tab shows the
