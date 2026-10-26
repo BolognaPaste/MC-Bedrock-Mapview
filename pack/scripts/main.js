@@ -6,7 +6,7 @@
 import { world, system } from '@minecraft/server';
 
 const TAG = 'BMLIVE1 ';
-const VERSION = '1.0.0';
+const VERSION = '1.0.1';
 const DIMS = { 'minecraft:overworld': 0, 'minecraft:nether': 1, 'minecraft:the_end': 2 };
 const EXPLORE_RADIUS = 5; // chunks around each player that are sent once per session, so new ground shows up
 const REFRESH_RADIUS = 1; // chunks around each player sent again every 30 s (growth, fire, water, mobs...)
@@ -96,12 +96,20 @@ function nearPlayers(offsets, again) {
 const isWater = n => n === 'water' || n === 'flowing_water';
 const skip = n => SKIP.has(n) || SKIP_RE.test(n);
 
+// The first block a ray straight down from the sky meets, including water, leaves and plants.
+// (Dimension.getTopmostBlock is no good here: it skips water and leaves, so rivers showed their beds and
+// trees only their trunks.)
+function topBlock(dim, x, z, minY, maxY) {
+  const hit = dim.getBlockFromRay({ x: x + 0.5, y: maxY - 0.01, z: z + 0.5 }, { x: 0, y: -1, z: 0 }, { includeLiquidBlocks: true, includePassableBlocks: true, maxDistance: maxY - minY });
+  return hit && hit.block;
+}
+
 // The highest block of a column that the map shows, as { y, block, water }. Null when the column is not loaded.
 function column(dim, x, z, minY, maxY) {
-  let b;
-  if (dim.getTopmostBlock) b = dim.getTopmostBlock({ x, z });
-  else b = dim.getBlockFromRay({ x: x + 0.5, y: maxY - 0.01, z: z + 0.5 }, { x: 0, y: -1, z: 0 }, { includeLiquidBlocks: true, includePassableBlocks: true, maxDistance: maxY - minY })?.block;
-  if (!b) return null;
+  const b0 = topBlock(dim, x, z, minY, maxY);
+  // Nothing hit: an empty column (the End's void) if the chunk is loaded, otherwise unknown.
+  if (!b0) return null;
+  let b = b0;
   let y = b.location.y, water = 0, surface = 0;
   for (let steps = 0; y >= minY && steps < 96; steps++) {
     const id = b ? b.typeId : 'minecraft:air';

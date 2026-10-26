@@ -385,7 +385,7 @@ impl Live {
         if fixed.is_some() && world.is_empty() {
             if let Some(slug) = &link {
                 world = maps.iter().find(|(m, _)| m == slug).map(|(_, n)| n.clone()).unwrap_or_default();
-                if world_key != "unknown" {
+                if world_key != "unknown" && world_key != "default" {
                     i.config.links.insert(world_key.clone(), slug.clone());
                 }
             }

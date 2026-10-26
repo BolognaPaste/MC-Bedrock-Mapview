@@ -4,7 +4,7 @@
     "name": "Bedrock Map Live",
     "description": "Live map for the Bedrock Map app: shows players and changed chunks as you play. Needs Content Log File on (Settings > Creator).",
     "uuid": "a2c3f866-ec0e-48ce-a29d-51909d3ed091",
-    "version": [1, 0, 0],
+    "version": [1, 0, 1],
     "min_engine_version": [1, 21, 0]
   },
   "modules": [
@@ -13,7 +13,7 @@
       "type": "script",
       "language": "javascript",
       "uuid": "7f635a1d-27c5-4c0f-b2c5-90da0377c27b",
-      "version": [1, 0, 0],
+      "version": [1, 0, 1],
       "entry": "scripts/main.js"
     }
   ],
