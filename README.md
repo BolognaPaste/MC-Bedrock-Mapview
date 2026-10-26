@@ -46,12 +46,6 @@ solid, and blocks are flat colours (no textures). `viewer/map3d.js` holds the re
 `DMAX` at its top trade detail and memory for view distance.
 
 
-**Server plugins.** The app runs a small HTTP server for other plugins, on `127.0.0.1:8130` by default (only this
-computer). The tab shows the
-address and the key a plugin needs, lets you change the port, allow other devices on your network, make a new key,
-and pick which built map each connected plugin's world is drawn into. Settings are saved in
-`%APPDATA%\Bedrock Map\live-link.json`. Live chunk drawing waits while a map is being built, and a rebuild replaces
-whatever was drawn live.
 
 The protocol a plugin speaks (JSON over HTTP, `hello`, `push`, `bye`, and `players`, `chunk`, `event`, `world`
 messages) is in [docs/live-protocol.md](docs/live-protocol.md). The code is `src-tauri/src/live.rs` (server and
