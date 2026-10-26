@@ -168,26 +168,23 @@ pub fn pack_script() -> String {
     for (marker, table) in [("/*BM:EXACT*/", EXACT), ("/*BM:LEAVES*/", LEAVES), ("/*BM:DYES*/", DYES), ("/*BM:WOODS*/", WOODS)] {
         s = fill(&s, marker, &table_json(table));
     }
-    s
+    fill(&s, "/*BM:PALETTE*/", &crate::map_palette::script_json())
 }
 
-/// Number of map font pages (U+E200 .. U+F1FF).
-pub const GLYPH_PAGES: usize = 16;
+/// Number of map font pages: U+E200 .. U+E2FF holds every map colour (see map_palette.rs), and U+E300 .. is a test
+/// page for /maptest (a row that switches pages at every character, to show the drift that made the map one page).
+pub const GLYPH_PAGES: usize = 2;
 
-/// The colour level (0..15) of each row and column of a font page. Neighbouring cells, including the first and last
-/// (the texture wraps around), differ by at most two levels: when the game shrinks the font texture it blends a
-/// cell with its neighbours, and with plain 0..15 order a dark blue cell next to the page edge picked up bright
-/// blue (and so on), which showed up as specks. The script uses the inverse of this order (`POS` in main.js).
-pub const GLYPH_ORDER: [usize; 16] = [0, 2, 4, 6, 8, 10, 12, 14, 15, 13, 11, 9, 7, 5, 3, 1];
-
-/// One of the map's font pages, U+E200 + 256 * page onwards (see the pack's main.js): 16 x 16 cells of 16 px, a
-/// 16-level colour cube. Page r holds red level r; the cell in row i, column j is green GLYPH_ORDER[i] and blue
-/// GLYPH_ORDER[j]. Every cell is fully opaque, so all characters are equally wide and the map's columns line up.
+/// One of the map's font pages, U+E200 + 256 * page onwards: 16 x 16 cells of 16 px. Page 0 holds the 256 map
+/// colours in cell order; page 1 is the /maptest page, every cell magenta. Every cell is fully opaque, so all
+/// characters are equally wide.
 pub fn glyph_page(page: usize) -> Vec<u8> {
+    let p = crate::map_palette::palette();
     let mut px = vec![0u8; 256 * 256 * 4];
     for cell in 0..256 {
         let (row, col) = (cell / 16, cell % 16);
-        let c = [(page * 17) as u8, (GLYPH_ORDER[row] * 17) as u8, (GLYPH_ORDER[col] * 17) as u8, 255];
+        let rgb = if page == 0 { p.cells[cell] } else { [255, 0, 255] };
+        let c = [rgb[0], rgb[1], rgb[2], 255];
         for y in 0..16 {
             for x in 0..16 {
                 let o = ((row * 16 + y) * 256 + col * 16 + x) * 4;
@@ -495,7 +492,7 @@ mod tests {
             "Bedrock Map Live RP/textures/item_texture.json",
             "Bedrock Map Live RP/textures/items/bmlive_map.png",
             "Bedrock Map Live RP/font/glyph_E2.png",
-            "Bedrock Map Live RP/font/glyph_F1.png",
+            "Bedrock Map Live RP/font/glyph_E3.png",
             "Bedrock Map Live RP/textures/bmlive/arrow_0.png",
             "Bedrock Map Live RP/textures/bmlive/arrow_7.png",
         ] {
@@ -510,44 +507,26 @@ mod tests {
 
     #[test]
     fn glyph_pages_match_the_scripts_colour_code() {
-        // colour (r, g, b), 0..15 each, is character U+E200 + r*256 + pos(g)*16 + pos(b), pos = GLYPH_ORDER inverted
+        // the map's colour in cell i of the palette is character U+E200 + i, drawn from font page E2
         let decode = |png: Vec<u8>| -> Vec<u8> {
             let mut r = png::Decoder::new(std::io::Cursor::new(png)).read_info().unwrap();
             let mut buf = vec![0u8; r.output_buffer_size()];
             r.next_frame(&mut buf).unwrap();
             buf
         };
-        let pages: Vec<Vec<u8>> = (0..GLYPH_PAGES).map(|p| decode(glyph_page(p))).collect();
-        let pos = |v: usize| GLYPH_ORDER.iter().position(|&o| o == v).unwrap();
-        let at = |page: usize, row: usize, col: usize, dx: usize, dy: usize| -> [u8; 4] {
-            let o = ((row * 16 + dy) * 256 + col * 16 + dx) * 4;
-            let px = &pages[page];
-            [px[o], px[o + 1], px[o + 2], px[o + 3]]
-        };
-        assert_eq!(at(0, pos(0), pos(0), 8, 8), [0, 0, 0, 255]);
-        assert_eq!(at(15, pos(7), pos(2), 8, 8), [255, 119, 34, 255]);
-        assert_eq!(at(15, pos(15), pos(15), 8, 8), [255, 255, 255, 255]);
-        // every colour appears once, and every cell is fully opaque (equal widths, so the columns line up)
-        let mut seen = std::collections::HashSet::new();
-        for page in 0..GLYPH_PAGES {
-            for row in 0..16 {
-                for col in 0..16 {
-                    for (dx, dy) in [(0, 0), (15, 0), (0, 15), (15, 15)] {
-                        assert_eq!(at(page, row, col, dx, dy)[3], 255, "page {} cell {},{} corner not opaque", page, row, col);
-                    }
-                    seen.insert(at(page, row, col, 8, 8));
-                }
+        let pal = crate::map_palette::palette();
+        let page = decode(glyph_page(0));
+        for cell in 0..256 {
+            let (row, col) = (cell / 16, cell % 16);
+            for (dx, dy) in [(0, 0), (15, 0), (0, 15), (15, 15), (8, 8)] {
+                let o = ((row * 16 + dy) * 256 + col * 16 + dx) * 4;
+                assert_eq!(&page[o..o + 4], &[pal.cells[cell][0], pal.cells[cell][1], pal.cells[cell][2], 255], "cell {} not solid", cell);
             }
         }
-        assert_eq!(seen.len(), 4096);
-        // neighbouring cells, also across the page edge, are close colours
-        for i in 0..16 {
-            let (a, b) = (GLYPH_ORDER[i] as i32, GLYPH_ORDER[(i + 1) % 16] as i32);
-            assert!((a - b).abs() <= 2, "levels {} and {} side by side", a, b);
-        }
-        // the script uses the same order
-        let order = format!("{:?}", GLYPH_ORDER);
-        assert!(pack_script().contains(&format!("const ORDER = {};", order)), "main.js ORDER differs from {}", order);
+        // the script gets the lookup table and the reserved cells
+        let s = pack_script();
+        assert!(s.contains(&format!("unknown: {}, white: {}, red: {} }}", pal.unknown, pal.white, pal.red)));
+        assert!(s.contains(&crate::map_palette::base64(&pal.lut[..30])));
     }
 
     #[test]

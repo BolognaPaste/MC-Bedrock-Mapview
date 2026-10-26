@@ -131,7 +131,7 @@
       {
         "bm_bigmap_text@hud.bm_map_label": {
           "text": "#bm_text",
-          "font_scale_factor": 0.21,
+          "font_scale_factor": 0.2,
           "bindings": [
             { "binding_name": "#hud_subtitle_text_string" },
             { "binding_type": "view", "source_property_name": "(#hud_subtitle_text_string - 'bm:f:')", "target_property_name": "#bm_text" }
@@ -140,7 +140,7 @@
             {
               "bm_bigmap_fill@hud.bm_map_label": {
                 "text": "#bm_text",
-                "font_scale_factor": 0.21,
+                "font_scale_factor": 0.2,
                 "offset": [ 0.4, 0.3 ],
                 "bindings": [
             { "binding_name": "#hud_subtitle_text_string" },
@@ -172,7 +172,7 @@
 
   "bm_big_arrow@hud.bm_arrow": {
     "size": [ 10, 10 ],
-    "offset": [ 0.95, 0.95 ],
+    "offset": [ 0.9, 0.9 ],
     "bindings": [
       { "binding_name": "#hud_subtitle_text_string" },
       {

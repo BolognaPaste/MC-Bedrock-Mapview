@@ -5,7 +5,7 @@
 // The map data is the same live feed the app gets: each scanned chunk's top blocks. In game it is kept as a colour and
 // a height per block column, in 128 x 128 block regions saved in the world (dynamic properties), so the map survives
 // restarts. Add-ons cannot draw pixels, so the map is drawn with characters from the resource pack's font pages,
-// one solid colour per character (font/glyph_E2.png .. glyph_F1.png), with hill shading worked out from the heights,
+// one solid colour per character (256 colours on font page glyph_E2.png), with hill shading worked out from the heights,
 // and sent as a title the resource pack's HUD shows.
 //
 // For the app: a world pack cannot use the network outside a dedicated server, so every message for the app is
@@ -14,7 +14,7 @@
 import { world, system, ItemStack, CommandPermissionLevel, CustomCommandStatus } from '@minecraft/server';
 
 const TAG = 'BMLIVE1 ';
-const VERSION = '1.3.0';
+const VERSION = '1.5.0';
 const DIMS = { 'minecraft:overworld': 0, 'minecraft:nether': 1, 'minecraft:the_end': 2 };
 const DIM_IDS = ['minecraft:overworld', 'minecraft:nether', 'minecraft:the_end'];
 const EXPLORE_RADIUS = 8; // chunks around each player that are scanned once per session, so new ground shows up
@@ -85,15 +85,55 @@ const blend = (a, w, under) => [0, 1, 2].map(i => Math.round(w[i] * a + under[i]
 
 // Per column: c is 0 (not mapped) or 1 + its colour as 5-bit red, green and blue (the app's colour with water blended
 // in, not shaded), and hw is its height + 64, plus 512 * the water depth. Hills are shaded when the map is drawn,
-// from the heights, so they come out right whichever chunk was scanned first, and across restarts. A region is saved
-// as two strings ('bmlive:c3:' and 'bmlive:h3:'), one character per column: the value + 0x100, which stays clear of
-// control characters and of the surrogate range.
-const R = 128;
-const regions = new Map(); // "dim:rx:rz" -> { key, c: Uint16Array, hw: Uint16Array, dirty, used }
-const MAX_REGIONS = 160; // kept in memory (64 KB each); the rest stay saved in the world
-let saveFull = false; // the world refused more map data: stop saving new regions
+// from the heights, so they come out right whichever chunk was scanned first, and across restarts.
+//
+// Saved in the world as dynamic properties, so the whole explored map is there again next time, on every platform:
+// a region is four strips of 32 rows ('bmlive:m4:dim:rx:rz:strip'), five base64 characters per column
+// (c * 16384 + hw, 30 bits). Plain ASCII keeps every strip at 20480 bytes, under the game's 32767 limit whether it
+// counts characters or bytes (1.3.0 saved one character per column above U+0800, three bytes each in UTF-8, and
+// those saves could be refused). Strips with nothing mapped are not saved. Changed strips are saved every 10 s, when
+// a player leaves and when the world closes.
+const R = 128, STRIP = 32, STRIPS = R / STRIP, STRIP_CHARS = STRIP * R * 5;
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+const B64V = new Uint8Array(128);
+for (let i = 0; i < 64; i++) B64V[B64.charCodeAt(i)] = i;
+const regions = new Map(); // "dim:rx:rz" -> { key, c: Uint16Array, hw: Uint16Array, dirty (bit per strip), used }
+let MAX_REGIONS = 160; // kept in memory (64 KB each); the rest stay saved in the world
+let saveBlockedUntil = 0; // the world refused map data: try again later
 let tickNow = 0;
 let mapRev = 0; // goes up whenever a map column changes, so drawn maps know to redraw
+try {
+  const tier = system.serverSystemInfo.memoryTier; // MemoryTier: 0 super low, 1 low, 2 mid, 3 high, 4 super high
+  if (typeof tier === 'number' && tier <= 1) MAX_REGIONS = 64;
+} catch {}
+const stripKey = (k, s) => 'bmlive:m4:' + k + ':' + s;
+
+function decodeStrip(s, r, strip) {
+  let o = strip * STRIP * R;
+  for (let i = 0; i < STRIP_CHARS; i += 5, o++) {
+    const v = (((((B64V[s.charCodeAt(i)] << 6) | B64V[s.charCodeAt(i + 1)]) << 6 | B64V[s.charCodeAt(i + 2)]) << 6 | B64V[s.charCodeAt(i + 3)]) << 6) | B64V[s.charCodeAt(i + 4)];
+    r.c[o] = v >>> 14;
+    r.hw[o] = v & 16383;
+  }
+}
+// The strip as a string, or null when nothing in it is mapped.
+const encodeBuf = new Uint8Array(STRIP_CHARS);
+function encodeStrip(r, strip) {
+  let any = false;
+  for (let i = 0, o = strip * STRIP * R; i < STRIP_CHARS; i += 5, o++) {
+    const v = r.c[o] * 16384 + r.hw[o];
+    if (r.c[o]) any = true;
+    encodeBuf[i] = B64.charCodeAt((v >>> 24) & 63);
+    encodeBuf[i + 1] = B64.charCodeAt((v >>> 18) & 63);
+    encodeBuf[i + 2] = B64.charCodeAt((v >>> 12) & 63);
+    encodeBuf[i + 3] = B64.charCodeAt((v >>> 6) & 63);
+    encodeBuf[i + 4] = B64.charCodeAt(v & 63);
+  }
+  if (!any) return null;
+  let s = '';
+  for (let i = 0; i < STRIP_CHARS; i += 4096) s += String.fromCharCode.apply(null, encodeBuf.subarray(i, i + 4096));
+  return s;
+}
 
 const missing = new Map(); // regions not saved in the world -> tick last checked (drawing asks for them often)
 function region(dim, rx, rz, create) {
@@ -101,18 +141,25 @@ function region(dim, rx, rz, create) {
   let r = regions.get(k);
   if (r) { r.used = tickNow; return r; }
   if (!create && missing.has(k) && tickNow - missing.get(k) < 200) return null;
-  let c = null, hw = null;
+  r = { key: k, c: new Uint16Array(R * R), hw: new Uint16Array(R * R), dirty: 0, used: tickNow, legacy: false };
+  let found = false;
   try {
-    const sc = world.getDynamicProperty('bmlive:c3:' + k), sh = world.getDynamicProperty('bmlive:h3:' + k);
-    if (typeof sc === 'string' && typeof sh === 'string' && sc.length === R * R && sh.length === R * R) {
-      c = new Uint16Array(R * R);
-      hw = new Uint16Array(R * R);
-      for (let i = 0; i < c.length; i++) { c[i] = sc.charCodeAt(i) - 0x100; hw[i] = sh.charCodeAt(i) - 0x100; }
+    for (let s = 0; s < STRIPS; s++) {
+      const v = world.getDynamicProperty(stripKey(k, s));
+      if (typeof v === 'string' && v.length === STRIP_CHARS) { decodeStrip(v, r, s); found = true; }
+    }
+    if (!found) {
+      // a region saved by pack 1.3.0: read it, and save it again in the new form
+      const sc = world.getDynamicProperty('bmlive:c3:' + k), sh = world.getDynamicProperty('bmlive:h3:' + k);
+      if (typeof sc === 'string' && typeof sh === 'string' && sc.length === R * R && sh.length === R * R) {
+        for (let i = 0; i < R * R; i++) { r.c[i] = sc.charCodeAt(i) - 0x100; r.hw[i] = sh.charCodeAt(i) - 0x100; }
+        r.dirty = (1 << STRIPS) - 1;
+        r.legacy = found = true;
+      }
     }
   } catch {}
-  if (!c && !create) { missing.set(k, tickNow); return null; }
+  if (!found && !create) { missing.set(k, tickNow); return null; }
   missing.delete(k);
-  r = { key: k, c: c || new Uint16Array(R * R), hw: hw || new Uint16Array(R * R), dirty: false, used: tickNow };
   regions.set(k, r);
   if (regions.size > MAX_REGIONS) {
     let old = null;
@@ -121,23 +168,49 @@ function region(dim, rx, rz, create) {
   }
   return r;
 }
-const packChars = a => {
-  let s = '';
-  for (let i = 0; i < a.length; i += 1024) s += String.fromCharCode(...Array.from(a.subarray(i, i + 1024), v => v + 0x100));
-  return s;
-};
-function saveRegion(r) {
-  if (!r.dirty || saveFull) return;
+
+// Saves a region's changed strips. Returns false when the world refused (the strip stays marked as changed).
+function saveStrip(r, s) {
   try {
-    world.setDynamicProperty('bmlive:c3:' + r.key, packChars(r.c));
-    world.setDynamicProperty('bmlive:h3:' + r.key, packChars(r.hw));
-    r.dirty = false;
+    world.setDynamicProperty(stripKey(r.key, s), encodeStrip(r, s) ?? undefined);
+    r.dirty &= ~(1 << s);
   } catch (e) {
-    saveFull = true;
-    console.warn('Bedrock Map Live: could not save more map data in this world (' + e + '). The map keeps working until the world closes.');
+    saveBlockedUntil = tickNow + 6000;
+    console.warn('Bedrock Map Live: the world did not take more map data (' + e + '). Trying again in 5 minutes.');
+    return false;
+  }
+  if (!r.dirty && r.legacy) {
+    try { world.setDynamicProperty('bmlive:c3:' + r.key, undefined); world.setDynamicProperty('bmlive:h3:' + r.key, undefined); } catch {}
+    r.legacy = false;
+  }
+  return true;
+}
+function saveRegion(r) {
+  for (let s = 0; s < STRIPS; s++) if (r.dirty & (1 << s) && !saveStrip(r, s)) return;
+}
+// Everything changed, at once (the world is closing, or a region is about to be dropped from memory).
+const saveAll = () => { for (const r of regions.values()) saveRegion(r); };
+// The same, a strip per tick at most, so saving never makes the game stutter.
+let saving = false;
+function* saveJob() {
+  try {
+    for (const r of [...regions.values()]) {
+      for (let s = 0; s < STRIPS; s++) {
+        if (!(r.dirty & (1 << s))) continue;
+        if (tickNow < saveBlockedUntil || !saveStrip(r, s)) return;
+        yield;
+      }
+    }
+  } finally {
+    saving = false;
   }
 }
-const saveAll = () => { for (const r of regions.values()) saveRegion(r); };
+function saveSoon() {
+  if (saving || tickNow < saveBlockedUntil) return;
+  for (const r of regions.values()) {
+    if (r.dirty) { saving = true; system.runJob(saveJob()); return; }
+  }
+}
 // Map data from pack 1.1 and 1.2 (one 4-bit colour per column, no heights) is not used any more: free the space.
 function dropOldMaps() {
   try {
@@ -154,10 +227,10 @@ function mapColumn(dim, x, z, c) {
     rgb = c.block.endsWith('water') ? blend(Math.min(0.55 + 0.03 * d, 0.97), WATER, [20, 20, 20]) : blend(Math.min(0.45 + 0.03 * d, 0.92), WATER, col);
   }
   const r = region(dim, Math.floor(x / R), Math.floor(z / R), true);
-  const i = (z - Math.floor(z / R) * R) * R + (x - Math.floor(x / R) * R);
+  const lz = z - Math.floor(z / R) * R, i = lz * R + (x - Math.floor(x / R) * R);
   const code = 1 + (((rgb[0] >> 3) << 10) | ((rgb[1] >> 3) << 5) | (rgb[2] >> 3));
   const hw = Math.max(0, Math.min(511, c.y + 64)) | (Math.min(c.water || 0, 31) << 9);
-  if (r.c[i] !== code || r.hw[i] !== hw) { r.c[i] = code; r.hw[i] = hw; r.dirty = true; mapRev++; }
+  if (r.c[i] !== code || r.hw[i] !== hw) { r.c[i] = code; r.hw[i] = hw; r.dirty |= 1 << (lz >> 5); mapRev++; }
 }
 
 /* ---- the world: a random id kept in the world, so the app can remember which map it belongs to ---- */
@@ -276,7 +349,12 @@ function* scan(job) {
     for (let lx = 0; lx < 16; lx++) {
       let c = null;
       const x = cx * 16 + lx, z = cz * 16 + lz;
-      try { c = column(dim, x, z, minY, maxY); } catch { c = null; }
+      try {
+        c = column(dim, x, z, minY, maxY);
+      } catch {
+        if (!loaded && lx === 0 && lz === 0) return; // not loaded (the first block throws): don't try the other 255
+        c = null;
+      }
       if (c) {
         loaded++;
         mapColumn(d, x, z, c);
@@ -313,29 +391,33 @@ function kick() {
 
 /* ---- drawing the map ---- */
 
-// Add-ons cannot draw pixels, so a map is text: one character per square, from the resource pack's font pages
-// (font/glyph_E2.png .. glyph_F1.png), each character a solid colour of a 16-level colour cube. Character
-// U+E200 + r * 256 + POS[g] * 16 + POS[b] is red r, green g and blue b (0..15); ORDER is the order of the levels
-// along a page, which keeps neighbouring characters close in colour (the game blends them a little when it shrinks
-// the font, and plain 0..15 order gave specks).
-const ORDER = [0, 2, 4, 6, 8, 10, 12, 14, 15, 13, 11, 9, 7, 5, 3, 1];
-const POS = [];
-ORDER.forEach((v, i) => { POS[v] = i; });
-const glyphOf = (r, g, b) => 0xe200 + (r << 8) + (POS[g] << 4) + POS[b];
-const UNKNOWN = glyphOf(2, 2, 2); // not mapped yet
-const MARK_RING = glyphOf(15, 15, 15), MARK_DOT = glyphOf(15, 2, 2); // another player: a white cross, red middle
+// Add-ons cannot draw pixels, so a map is text: one character per square, from the resource pack's font page
+// font/glyph_E2.png: 256 solid colours chosen for Minecraft terrain (the app picks them from its block colours, with
+// every shading step and water depth; see map_palette.rs). All of them are on one page on purpose: in game, a row
+// of text drifts sideways a little every time it switches font pages, and rows with many colours on several pages
+// came out sheared. PALETTE.lut maps a 5-bit red, green and blue colour (r << 10 | g << 5 | b) to the nearest cell;
+// character U+E200 + cell draws it. The app fills PALETTE in when it packages the add-on.
+const PALETTE = /*BM:PALETTE*/{ lut: '', unknown: 0, white: 1, red: 2 }/*BM:END*/;
+const PAL = new Uint8Array(32768);
+for (let i = 0, o = 0; i + 3 < PALETTE.lut.length + 3 && o < PAL.length; i += 4) {
+  const s = PALETTE.lut, n = (B64V[s.charCodeAt(i)] << 18) | (B64V[s.charCodeAt(i + 1)] << 12) | (B64V[s.charCodeAt(i + 2)] << 6) | B64V[s.charCodeAt(i + 3)];
+  PAL[o++] = n >> 16;
+  if (o < PAL.length) PAL[o++] = (n >> 8) & 255;
+  if (o < PAL.length) PAL[o++] = n & 255;
+}
+const UNKNOWN = 0xe200 + PALETTE.unknown; // not mapped yet
+const MARK_RING = 0xe200 + PALETTE.white, MARK_DOT = 0xe200 + PALETTE.red; // another player: a white cross, red middle
 
 // Hill shading, done while drawing: a square higher than the squares north and west of it is lighter, a lower one
 // darker, so slopes face a light in the north-west. The slope is the sum of both height differences (capped), and
-// the brightness 1 +- SHADE * sqrt(slope / 2): 16% for one block up, 32% for four. That is stronger than the app's
-// (7% per block) on purpose: with 16 levels per colour, smaller steps would round away and the map look flat.
-// LUT[(slope + MAX_SLOPE) * 32 + v] is the 4-bit level of a 5-bit colour channel v under that slope; colours are
-// also lifted a little off black, so dark blocks still show their shading.
+// the brightness 1 +- SHADE * sqrt(slope / 2): 16% for one block up, 32% for four, stronger than the app's (7% per
+// block) so it still shows with 256 colours. SH[(slope + MAX_SLOPE) * 32 + v] is a 5-bit colour channel v under that
+// slope, also lifted a little off black so dark blocks still show their shading (map_palette.rs does the same).
 const MAX_SLOPE = 12, SHADE = 0.16;
-const LUT = new Uint8Array((2 * MAX_SLOPE + 1) * 32);
+const SH = new Uint8Array((2 * MAX_SLOPE + 1) * 32);
 for (let s = -MAX_SLOPE; s <= MAX_SLOPE; s++) {
   const f = 1 + Math.sign(s) * SHADE * Math.sqrt(Math.abs(s) / 2);
-  for (let v = 0; v < 32; v++) LUT[(s + MAX_SLOPE) * 32 + v] = Math.max(0, Math.min(15, Math.round((12 + 0.9 * v * 255 / 31) * f * 15 / 255)));
+  for (let v = 0; v < 32; v++) SH[(s + MAX_SLOPE) * 32 + v] = Math.round(Math.max(0, Math.min(255, (12 + 0.9 * v * 255 / 31) * f)) * 31 / 255);
 }
 
 // Draws cols x rows squares from (x0, z0), `scale` blocks per square, north up, into `out` as rows of character
@@ -388,7 +470,7 @@ function* drawGrid(d, x0, z0, cols, rows, scale, out) {
         s = Math.max(-MAX_SLOPE, Math.min(MAX_SLOPE, Math.round(s / slopeDiv)));
       }
       const base = (s + MAX_SLOPE) * 32, v = sc - 1;
-      codes[col] = 0xe200 + (LUT[base + (v >> 10)] << 8) + (POS[LUT[base + ((v >> 5) & 31)]] << 4) + POS[LUT[base + (v & 31)]];
+      codes[col] = 0xe200 + PAL[(SH[base + (v >> 10)] << 10) | (SH[base + ((v >> 5) & 31)] << 5) | SH[base + (v & 31)]];
     }
     if (codes) out.push(codes);
     const t = above; above = here; here = t;
@@ -479,11 +561,30 @@ function* redraw(p, v, mf, bf) {
     v.busy = false;
   }
 }
+// /maptest: a test pattern in place of the maps. First the 256 map colours, 16 rows of 16 (each twice); then three
+// rows of 32 characters that should end in the same place: one colour, two colours from the map page, and the map
+// page alternating with a second font page (magenta). If that last row ends somewhere else, switching pages moves
+// text, which is why the map uses one page.
+const TEST_TEXT = (() => {
+  const row = codes => String.fromCharCode(...codes);
+  const palette = Array.from({ length: 16 }, (_, r) => row(Array.from({ length: 32 }, (_, i) => 0xe200 + r * 16 + (i >> 1))));
+  const grass = 0xe200 + PAL[(SH[MAX_SLOPE * 32 + 13] << 10) | (SH[MAX_SLOPE * 32 + 19] << 5) | SH[MAX_SLOPE * 32 + 7]];
+  const alt = (a, b) => row(Array.from({ length: 32 }, (_, i) => (i & 1 ? b : a)));
+  return [...palette, alt(UNKNOWN, UNKNOWN), alt(grass, grass), alt(grass, MARK_RING), alt(grass, 0xe300)].join('\n');
+})();
 function drawMaps() {
   for (const p of world.getAllPlayers()) {
     try {
       const o = optsOf(p), v = viewOf(p), big = o.big || holdingMap(p);
-      if (big && !o.wasBig) p.onScreenDisplay.setActionBar('Map: ' + perSquare(zoomOf(o)) + ' · use it to zoom out');
+      if (o.test) {
+        if (tickNow - v.sentAt >= 20) {
+          p.onScreenDisplay.setTitle('bm:x', { subtitle: 'bm:f:' + TEST_TEXT, fadeInDuration: 0, stayDuration: 60, fadeOutDuration: 0 });
+          v.sent = '';
+          v.sentAt = tickNow;
+        }
+        continue;
+      }
+      if (big && !o.wasBig) p.onScreenDisplay.setActionBar('Map: ' + perSquare(zoomOf(o)) + ' · ' + (USE[platformOf(p)] || USE.Desktop));
       o.wasBig = big;
       if (!o.mini && !big) {
         if (!o.cleared) { p.onScreenDisplay.clearTitle(); o.cleared = true; v.sent = ''; }
@@ -513,19 +614,27 @@ function zoomOut(p) {
   try { p.onScreenDisplay.setActionBar('Map: ' + perSquare(zoomOf(o))); } catch {}
 }
 
-// Everyone gets one Map item, once, in the last hotbar slot when it is free: pressing 9 then shows the big map
-// (add-ons cannot bind other keys). It can also be crafted from a compass and paper.
+// How to pick the Map and use it, in the words of the player's device (consoles have no number keys, phones no
+// right click). PlatformType is "Console", "Desktop" or "Mobile".
+function platformOf(p) {
+  try { return String(p.clientSystemInfo.platformType); } catch { return 'Desktop'; }
+}
+const PICK = { Desktop: ' Press 9 to look at it.', Console: ' Switch to it with the bumpers to look at it.', Mobile: ' Tap it in the hotbar to look at it.' };
+const USE = { Desktop: 'right-click it to zoom out', Console: 'use it (left trigger) to zoom out', Mobile: 'use it to zoom out' };
+
+// Everyone gets one Map item, once, in the last hotbar slot when it is free: pressing 9 (or the bumpers on a
+// console) then shows the big map (add-ons cannot bind other keys). It can also be crafted from a compass and paper.
 function giveMap(p) {
   try {
     if (p.getDynamicProperty('bmlive:gave_map')) return;
     const inv = p.getComponent('minecraft:inventory').container;
     for (let i = 0; i < inv.size; i++) if (inv.getItem(i)?.typeId === MAP_ITEM) { p.setDynamicProperty('bmlive:gave_map', true); return; }
     let where = '';
-    if (!inv.getItem(8) && p.selectedSlotIndex !== 8) { inv.setItem(8, new ItemStack(MAP_ITEM, 1)); where = ' Press 9 to look at it.'; }
+    if (!inv.getItem(8) && p.selectedSlotIndex !== 8) { inv.setItem(8, new ItemStack(MAP_ITEM, 1)); where = PICK[platformOf(p)] || PICK.Desktop; }
     else if (inv.emptySlotsCount > 0) inv.addItem(new ItemStack(MAP_ITEM, 1));
     else return;
     p.setDynamicProperty('bmlive:gave_map', true);
-    p.sendMessage('§eBedrock Map Live:§r hold the Map to see the big map, use it to zoom.' + where + ' /map and /minimap work too.');
+    p.sendMessage('§eBedrock Map Live:§r hold the Map to see the big map, ' + (USE[platformOf(p)] || USE.Desktop) + '.' + where + ' Typing /map and /minimap in chat works too.');
   } catch {}
 }
 
@@ -541,6 +650,12 @@ system.beforeEvents.startup.subscribe(init => {
     const p = player(origin);
     if (!p) return { status: CustomCommandStatus.Failure, message: 'Only players have a map.' };
     system.run(() => { const o = optsOf(p); o.big = !o.big; drawMaps(); });
+    return { status: CustomCommandStatus.Success };
+  });
+  reg.registerCommand({ name: 'bmlive:maptest', description: 'Show or hide a test pattern for the map font', permissionLevel: CommandPermissionLevel.Any, cheatsRequired: false }, origin => {
+    const p = player(origin);
+    if (!p) return { status: CustomCommandStatus.Failure, message: 'Only players have a map.' };
+    system.run(() => { const o = optsOf(p); o.test = !o.test; viewOf(p).sentAt = -100; drawMaps(); });
     return { status: CustomCommandStatus.Success };
   });
   reg.registerCommand({ name: 'bmlive:minimap', description: 'Show or hide the minimap', permissionLevel: CommandPermissionLevel.Any, cheatsRequired: false }, origin => {
@@ -576,8 +691,12 @@ on(after.entityDie, e => {
 on(after.playerLeave, e => {
   opts.delete(e.playerId);
   views.delete(e.playerId);
+  saveSoon(); // what they explored is kept even if the host closes the world right after
 });
-on(system.beforeEvents && system.beforeEvents.shutdown, () => send('bye', {}));
+on(system.beforeEvents && system.beforeEvents.shutdown, () => {
+  saveAll(); // the world is closing: keep everything not saved yet
+  send('bye', {});
+});
 
 /* ---- timers (started once the world has loaded) ---- */
 
@@ -596,7 +715,7 @@ function start() {
   system.runInterval(kick, 10);
   system.runTimeout(dropOldMaps, 60);
   system.runInterval(() => { tickNow = system.currentTick; drawMaps(); }, 4);
-  system.runInterval(saveAll, 600);
+  system.runInterval(saveSoon, 200);
 }
 on(after.worldLoad, start);
 system.runTimeout(start, 100); // in case the world had already loaded (for example after /reload)

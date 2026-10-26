@@ -8,6 +8,7 @@ mod leveldb;
 mod live;
 mod live_game;
 mod live_tiles;
+mod map_palette;
 mod nbt;
 mod panel;
 mod pngio;
