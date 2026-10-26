@@ -88,9 +88,9 @@
 
     <section class="lpanel" aria-labelledby="lPack">
       <div class="lhead"><h3 id="lPack">In-game pack</h3><span class="state" id="packState">Not seen yet</span></div>
-      <p class="hint">For single-player and co-op worlds hosted on this PC. The pack writes what happens in the world to Minecraft's content log, and this app reads it. No cheats or commands are needed (like any behavior pack, it turns off achievements for that world).</p>
+      <p class="hint">For single-player and co-op worlds hosted on this PC. The pack also gives everyone in the world an in-game map: a minimap in the top-right corner (<code>/minimap</code> shows or hides it), and a big map while you hold the Map item it puts in hotbar slot 9 (press 9; use it to zoom) or after <code>/map</code>. It works on its own, without this app; with Content Log File on, this app gets the same data for its live map. No cheats are needed (like any behavior pack, it turns off achievements for that world).</p>
       <ol class="steps">
-        <li id="stepPack"><b>Install the pack.</b> <button type="button" class="solid" id="packInstall">Install in Minecraft</button> <button type="button" class="mini" id="packSave">Show the .mcpack file</button><span class="hint">Opening it imports it into Minecraft. Share the file with friends who use this app too.</span></li>
+        <li id="stepPack"><b>Install the add-on.</b> <button type="button" class="solid" id="packInstall">Install in Minecraft</button> <button type="button" class="mini" id="packSave">Show the .mcaddon file</button><span class="hint">Opening it imports it into Minecraft. Share the file with friends: the in-game map works for them even without this app.</span></li>
         <li id="stepLog"><b>Turn on Settings &gt; Creator &gt; Content Log File</b> in Minecraft. <span class="check" id="logCheck"></span> <button type="button" class="mini" id="logEnable" hidden>Turn it on for me</button><span class="hint" id="logHint">Leave "Content Log GUI" off, or the pack's messages show on screen.</span></li>
         <li><b>Add the pack to the world:</b> Edit world, Behavior Packs, Available, <i>Bedrock Map Live</i>, Activate.</li>
         <li><b>Play.</b> The app notices the world, builds its map if there is none yet, and opens it.</li>

@@ -45,7 +45,14 @@ Only the top block of each column is known, so overhangs, cave mouths and the un
 solid, and blocks are flat colours (no textures). `viewer/map3d.js` holds the renderer; `LOD`, `MAX_TILES` and
 `DMAX` at its top trade detail and memory for view distance.
 
+## In-game map
 
+`Bedrock Map Live.mcaddon` (Live link tab, "Install in Minecraft") works without the app: activate it on a world
+and everyone gets a minimap in the top-right corner (`/minimap` shows or hides it) and a big map while holding the
+Map item (given once, in hotbar slot 9 when free, so pressing `9` shows it; using it changes the zoom; craftable
+from a compass and paper) or after `/map`. Bedrock add-ons cannot bind keys (scripts only see jump, sneak and
+movement), so there is no `M` shortcut. Maps are one block per square (minimap 64 x 64, big map 256 x 144), drawn
+with font glyphs from the resource pack, with hill shading worked out from the saved heights.
 
 The protocol a plugin speaks (JSON over HTTP, `hello`, `push`, `bye`, and `players`, `chunk`, `event`, `world`
 messages) is in [docs/live-protocol.md](docs/live-protocol.md). The code is `src-tauri/src/live.rs` (server and
@@ -75,12 +82,12 @@ src-tauri/src/
   main.rs      app start, command + protocol registration
   panel.rs     the commands the panel calls, build jobs
   live.rs      live link server for companion plugins; live_tiles.rs draws their chunks into tiles
-  live_game.rs reads the in-game pack's content log, builds the .mcpack
-pack/          the in-game behavior pack (manifest + scripts/main.js)
+  live_game.rs reads the in-game pack's content log, builds the .mcaddon (and its map glyph pages)
   protocol.rs  maps://  (http://maps.localhost on Windows) file server
   worlds.rs    find worlds / .mcworld files, unzip
   builder.rs   build one world into a map folder + meta.json
   world.rs     level.dat, player, chunk index
   leveldb.rs   LevelDB tables + logs (snappy / zlib blocks)
   chunk.rs nbt.rs colors.rs color_tables.rs render.rs pngio.rs
+pack/behavior/ the add-on's scripts (map, minimap, /map, live feed)   pack/resource/ its minimap HUD
 ```

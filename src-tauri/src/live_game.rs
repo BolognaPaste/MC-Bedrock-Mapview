@@ -2,6 +2,7 @@
 //! the network from scripts, so the pack writes live link messages to Minecraft's content log, and this module
 //! reads them as the log grows and hands them to live.rs. It also builds the .mcpack (with the app's own list of
 //! see-through blocks filled in), and checks and turns on the game's "Content Log File" setting.
+use crate::color_tables::{DYES, EXACT, LEAVES, WOODS};
 use crate::colors::{SKIP_EXACT, SKIP_PATTERN};
 use crate::live::Live;
 use serde_json::{json, Value};
@@ -12,12 +13,18 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-const MANIFEST: &str = include_str!("../../pack/manifest.json");
-const SCRIPT: &str = include_str!("../../pack/scripts/main.js");
+const MANIFEST: &str = include_str!("../../pack/behavior/manifest.json");
+const SCRIPT: &str = include_str!("../../pack/behavior/scripts/main.js");
+const RP_MANIFEST: &str = include_str!("../../pack/resource/manifest.json");
+const RP_HUD: &str = include_str!("../../pack/resource/ui/hud_screen.json");
+const RP_ITEM_TEXTURES: &str = include_str!("../../pack/resource/textures/item_texture.json");
+const BP_ITEM: &str = include_str!("../../pack/behavior/items/map.json");
+const BP_RECIPE: &str = include_str!("../../pack/behavior/recipes/map.json");
 const ICON: &[u8] = include_bytes!("../icons/128x128.png");
 /// Every pack line starts with this, followed by one JSON message.
 const TAG: &str = "BMLIVE1 ";
-pub const PACK_FILE: &str = "Bedrock Map Live.mcpack";
+/// Behavior pack (scripts) and resource pack (minimap HUD, map glyphs) in one file.
+pub const PACK_FILE: &str = "Bedrock Map Live.mcaddon";
 
 /// What the Live link tab shows about the in-game pack.
 #[derive(Default, Clone)]
@@ -149,18 +156,147 @@ fn fill(script: &str, start: &str, with: &str) -> String {
     }
 }
 
-/// The pack's script with the app's see-through block list filled in.
-pub fn pack_script() -> String {
-    let s = fill(SCRIPT, "/*BM:SKIP*/", &serde_json::to_string(SKIP_EXACT).unwrap_or_else(|_| "[]".into()));
-    fill(&s, "/*BM:SKIPRE*/", &serde_json::to_string(SKIP_PATTERN).unwrap_or_else(|_| "''".into()))
+fn table_json(t: &[(&str, [u8; 3])]) -> String {
+    let m: serde_json::Map<String, Value> = t.iter().map(|(k, v)| (k.to_string(), json!(v))).collect();
+    Value::Object(m).to_string()
 }
 
-/// The .mcpack file (a zip of the behavior pack).
+/// The pack's script with the app's see-through blocks and colour tables filled in.
+pub fn pack_script() -> String {
+    let mut s = fill(SCRIPT, "/*BM:SKIP*/", &serde_json::to_string(SKIP_EXACT).unwrap_or_else(|_| "[]".into()));
+    s = fill(&s, "/*BM:SKIPRE*/", &serde_json::to_string(SKIP_PATTERN).unwrap_or_else(|_| "''".into()));
+    for (marker, table) in [("/*BM:EXACT*/", EXACT), ("/*BM:LEAVES*/", LEAVES), ("/*BM:DYES*/", DYES), ("/*BM:WOODS*/", WOODS)] {
+        s = fill(&s, marker, &table_json(table));
+    }
+    s
+}
+
+/// Number of map font pages (U+E200 .. U+F1FF).
+pub const GLYPH_PAGES: usize = 16;
+
+/// The colour level (0..15) of each row and column of a font page. Neighbouring cells, including the first and last
+/// (the texture wraps around), differ by at most two levels: when the game shrinks the font texture it blends a
+/// cell with its neighbours, and with plain 0..15 order a dark blue cell next to the page edge picked up bright
+/// blue (and so on), which showed up as specks. The script uses the inverse of this order (`POS` in main.js).
+pub const GLYPH_ORDER: [usize; 16] = [0, 2, 4, 6, 8, 10, 12, 14, 15, 13, 11, 9, 7, 5, 3, 1];
+
+/// One of the map's font pages, U+E200 + 256 * page onwards (see the pack's main.js): 16 x 16 cells of 16 px, a
+/// 16-level colour cube. Page r holds red level r; the cell in row i, column j is green GLYPH_ORDER[i] and blue
+/// GLYPH_ORDER[j]. Every cell is fully opaque, so all characters are equally wide and the map's columns line up.
+pub fn glyph_page(page: usize) -> Vec<u8> {
+    let mut px = vec![0u8; 256 * 256 * 4];
+    for cell in 0..256 {
+        let (row, col) = (cell / 16, cell % 16);
+        let c = [(page * 17) as u8, (GLYPH_ORDER[row] * 17) as u8, (GLYPH_ORDER[col] * 17) as u8, 255];
+        for y in 0..16 {
+            for x in 0..16 {
+                let o = ((row * 16 + y) * 256 + col * 16 + x) * 4;
+                px[o..o + 4].copy_from_slice(&c);
+            }
+        }
+    }
+    png_bytes(256, 256, &px)
+}
+
+/// The "you are here" arrow drawn over the middle of the maps, pointing north (0), north-east (1), ... clockwise:
+/// 32 x 32, yellow with a black outline, transparent around it.
+pub fn arrow_texture(d: usize) -> Vec<u8> {
+    let a = d as f64 * std::f64::consts::FRAC_PI_4;
+    let shape = [(0.0, -13.0), (11.0, 11.0), (0.0, 5.0), (-11.0, 11.0)];
+    let pts: Vec<(f64, f64)> = shape.iter().map(|&(x, y)| (x * a.cos() - y * a.sin(), x * a.sin() + y * a.cos())).collect();
+    let inside = |x: f64, y: f64, grow: f64| {
+        // point in polygon, with the polygon scaled up by `grow` for the outline
+        let mut c = false;
+        for k in 0..pts.len() {
+            let (xi, yi) = (pts[k].0 * grow, pts[k].1 * grow);
+            let (xj, yj) = (pts[(k + 3) % 4].0 * grow, pts[(k + 3) % 4].1 * grow);
+            if (yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi {
+                c = !c;
+            }
+        }
+        c
+    };
+    let mut px = vec![0u8; 32 * 32 * 4];
+    for y in 0..32usize {
+        for x in 0..32usize {
+            let (fx, fy) = (x as f64 - 15.5, y as f64 - 15.5);
+            let c = if inside(fx, fy, 1.0) {
+                [255, 214, 64, 255]
+            } else if inside(fx, fy, 1.22) {
+                [0, 0, 0, 255]
+            } else {
+                [0, 0, 0, 0]
+            };
+            px[(y * 32 + x) * 4..(y * 32 + x) * 4 + 4].copy_from_slice(&c);
+        }
+    }
+    png_bytes(32, 32, &px)
+}
+
+/// The Map item's 16 x 16 icon: a folded paper map with land, water and a red marker.
+pub fn map_icon() -> Vec<u8> {
+    let mut px = vec![0u8; 16 * 16 * 4];
+    for y in 0..16usize {
+        for x in 0..16usize {
+            let o = (y * 16 + x) * 4;
+            let edge = x == 1 || x == 14 || y == 2 || y == 13;
+            let inside = (1..=14).contains(&x) && (2..=13).contains(&y);
+            let c: [u8; 4] = if !inside {
+                [0, 0, 0, 0]
+            } else if edge {
+                [92, 64, 38, 255]
+            } else if (x as i32 - 10).pow(2) + (y as i32 - 6).pow(2) <= 2 {
+                [200, 40, 40, 255]
+            } else if x + y / 2 < 9 || (x > 9 && y > 9) {
+                [70, 110, 200, 255]
+            } else if x == 5 || x == 10 {
+                [196, 176, 128, 255] // folds
+            } else {
+                [110, 160, 70, 255]
+            };
+            px[o..o + 4].copy_from_slice(&c);
+        }
+    }
+    png_bytes(16, 16, &px)
+}
+
+fn png_bytes(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut out, w, h);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut wr = enc.write_header().expect("png header");
+        wr.write_image_data(rgba).expect("png data");
+    }
+    out
+}
+
+/// The .mcaddon file: the behavior pack (scripts) and the resource pack (minimap HUD and map glyphs), each in its
+/// own folder. The behavior pack depends on the resource pack, so activating it on a world adds both.
 pub fn build_pack() -> Result<Vec<u8>, String> {
     use zip::write::SimpleFileOptions;
     let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-    for (name, bytes) in [("manifest.json", MANIFEST.as_bytes().to_vec()), ("scripts/main.js", pack_script().into_bytes()), ("pack_icon.png", ICON.to_vec())] {
+    let mut files: Vec<(String, Vec<u8>)> = vec![
+        ("Bedrock Map Live/manifest.json".into(), MANIFEST.as_bytes().to_vec()),
+        ("Bedrock Map Live/scripts/main.js".into(), pack_script().into_bytes()),
+        ("Bedrock Map Live/pack_icon.png".into(), ICON.to_vec()),
+        ("Bedrock Map Live/items/map.json".into(), BP_ITEM.as_bytes().to_vec()),
+        ("Bedrock Map Live/recipes/map.json".into(), BP_RECIPE.as_bytes().to_vec()),
+        ("Bedrock Map Live RP/manifest.json".into(), RP_MANIFEST.as_bytes().to_vec()),
+        ("Bedrock Map Live RP/ui/hud_screen.json".into(), RP_HUD.as_bytes().to_vec()),
+        ("Bedrock Map Live RP/textures/item_texture.json".into(), RP_ITEM_TEXTURES.as_bytes().to_vec()),
+        ("Bedrock Map Live RP/textures/items/bmlive_map.png".into(), map_icon()),
+        ("Bedrock Map Live RP/pack_icon.png".into(), ICON.to_vec()),
+    ];
+    for page in 0..GLYPH_PAGES {
+        files.push((format!("Bedrock Map Live RP/font/glyph_{:X}.png", 0xE2 + page), glyph_page(page)));
+    }
+    for d in 0..8 {
+        files.push((format!("Bedrock Map Live RP/textures/bmlive/arrow_{}.png", d), arrow_texture(d)));
+    }
+    for (name, bytes) in files {
         w.start_file(name, opts).map_err(|e| e.to_string())?;
         w.write_all(&bytes).map_err(|e| e.to_string())?;
     }
@@ -337,14 +473,105 @@ mod tests {
     }
 
     #[test]
-    fn pack_is_a_zip_with_the_manifest_and_script() {
+    fn addon_has_both_packs_and_the_behavior_pack_needs_the_resource_pack() {
         let bytes = build_pack().unwrap();
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
-        let mut m = String::new();
-        z.by_name("manifest.json").unwrap().read_to_string(&mut m).unwrap();
-        let v: Value = serde_json::from_str(&m).unwrap();
-        assert_eq!(v["modules"][0]["entry"], "scripts/main.js");
-        assert!(z.by_name("scripts/main.js").is_ok() && z.by_name("pack_icon.png").is_ok());
+        let read = |z: &mut zip::ZipArchive<std::io::Cursor<Vec<u8>>>, n: &str| {
+            let mut s = String::new();
+            z.by_name(n).unwrap().read_to_string(&mut s).unwrap();
+            s
+        };
+        let bp: Value = serde_json::from_str(&read(&mut z, "Bedrock Map Live/manifest.json")).unwrap();
+        let rp: Value = serde_json::from_str(&read(&mut z, "Bedrock Map Live RP/manifest.json")).unwrap();
+        assert_eq!(bp["modules"][0]["entry"], "scripts/main.js");
+        assert_eq!(rp["modules"][0]["type"], "resources");
+        let deps = bp["dependencies"].as_array().unwrap();
+        assert!(deps.iter().any(|d| d["uuid"] == rp["header"]["uuid"] && d["version"] == rp["header"]["version"]));
+        for f in [
+            "Bedrock Map Live/scripts/main.js",
+            "Bedrock Map Live/items/map.json",
+            "Bedrock Map Live/recipes/map.json",
+            "Bedrock Map Live RP/ui/hud_screen.json",
+            "Bedrock Map Live RP/textures/item_texture.json",
+            "Bedrock Map Live RP/textures/items/bmlive_map.png",
+            "Bedrock Map Live RP/font/glyph_E2.png",
+            "Bedrock Map Live RP/font/glyph_F1.png",
+            "Bedrock Map Live RP/textures/bmlive/arrow_0.png",
+            "Bedrock Map Live RP/textures/bmlive/arrow_7.png",
+        ] {
+            assert!(z.by_name(f).is_ok(), "{} missing", f);
+        }
+        // the item and its icon are wired up: item icon name -> item_texture.json entry
+        let item: Value = serde_json::from_str(&read(&mut z, "Bedrock Map Live/items/map.json")).unwrap();
+        let tex: Value = serde_json::from_str(&read(&mut z, "Bedrock Map Live RP/textures/item_texture.json")).unwrap();
+        let icon = item["minecraft:item"]["components"]["minecraft:icon"].as_str().unwrap();
+        assert_eq!(tex["texture_data"][icon]["textures"], "textures/items/bmlive_map");
+    }
+
+    #[test]
+    fn glyph_pages_match_the_scripts_colour_code() {
+        // colour (r, g, b), 0..15 each, is character U+E200 + r*256 + pos(g)*16 + pos(b), pos = GLYPH_ORDER inverted
+        let decode = |png: Vec<u8>| -> Vec<u8> {
+            let mut r = png::Decoder::new(std::io::Cursor::new(png)).read_info().unwrap();
+            let mut buf = vec![0u8; r.output_buffer_size()];
+            r.next_frame(&mut buf).unwrap();
+            buf
+        };
+        let pages: Vec<Vec<u8>> = (0..GLYPH_PAGES).map(|p| decode(glyph_page(p))).collect();
+        let pos = |v: usize| GLYPH_ORDER.iter().position(|&o| o == v).unwrap();
+        let at = |page: usize, row: usize, col: usize, dx: usize, dy: usize| -> [u8; 4] {
+            let o = ((row * 16 + dy) * 256 + col * 16 + dx) * 4;
+            let px = &pages[page];
+            [px[o], px[o + 1], px[o + 2], px[o + 3]]
+        };
+        assert_eq!(at(0, pos(0), pos(0), 8, 8), [0, 0, 0, 255]);
+        assert_eq!(at(15, pos(7), pos(2), 8, 8), [255, 119, 34, 255]);
+        assert_eq!(at(15, pos(15), pos(15), 8, 8), [255, 255, 255, 255]);
+        // every colour appears once, and every cell is fully opaque (equal widths, so the columns line up)
+        let mut seen = std::collections::HashSet::new();
+        for page in 0..GLYPH_PAGES {
+            for row in 0..16 {
+                for col in 0..16 {
+                    for (dx, dy) in [(0, 0), (15, 0), (0, 15), (15, 15)] {
+                        assert_eq!(at(page, row, col, dx, dy)[3], 255, "page {} cell {},{} corner not opaque", page, row, col);
+                    }
+                    seen.insert(at(page, row, col, 8, 8));
+                }
+            }
+        }
+        assert_eq!(seen.len(), 4096);
+        // neighbouring cells, also across the page edge, are close colours
+        for i in 0..16 {
+            let (a, b) = (GLYPH_ORDER[i] as i32, GLYPH_ORDER[(i + 1) % 16] as i32);
+            assert!((a - b).abs() <= 2, "levels {} and {} side by side", a, b);
+        }
+        // the script uses the same order
+        let order = format!("{:?}", GLYPH_ORDER);
+        assert!(pack_script().contains(&format!("const ORDER = {};", order)), "main.js ORDER differs from {}", order);
+    }
+
+    #[test]
+    fn arrows_point_the_right_way() {
+        let decode = |png: Vec<u8>| -> Vec<u8> {
+            let mut r = png::Decoder::new(std::io::Cursor::new(png)).read_info().unwrap();
+            let mut buf = vec![0u8; r.output_buffer_size()];
+            r.next_frame(&mut buf).unwrap();
+            buf
+        };
+        let yellow = |px: &[u8], x: usize, y: usize| px[(y * 32 + x) * 4] == 255 && px[(y * 32 + x) * 4 + 3] == 255;
+        let north = decode(arrow_texture(0));
+        assert!(yellow(&north, 16, 6) && !yellow(&north, 16, 27), "north arrow tip at the top");
+        let east = decode(arrow_texture(2));
+        assert!(yellow(&east, 25, 16) && !yellow(&east, 4, 16), "east arrow tip on the right");
+        assert_eq!(north[3], 0, "transparent corner");
+    }
+
+
+    #[test]
+    fn pack_script_gets_the_colour_tables() {
+        let s = pack_script();
+        assert!(s.contains("\"birch\""), "leaves/woods tables filled in");
+        assert!(!s.contains("grass_block: [95, 159, 53]"), "the short default table is replaced");
     }
 
     /// Writes the packaged script to $DUMP_PACK_SCRIPT (for running it outside the game) and/or the .mcpack to

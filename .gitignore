@@ -3,3 +3,4 @@ src-tauri/gen/
 node_modules/
 # built by the app (Live link tab) or `cargo test dump_pack -- --ignored`; published as a release download
 *.mcpack
+*.mcaddon

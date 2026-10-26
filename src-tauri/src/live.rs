@@ -818,7 +818,7 @@ pub fn live_link(state: State<AppState>, session: String, slug: Option<String>) 
 pub fn live_pack(state: State<AppState>, reveal: bool) -> Result<Value, String> {
     let p = live_game::write_pack(&state.live.data_dir)?;
     live_game::open_path(&p, reveal)?;
-    let msg = if reveal { format!("Saved the pack as {}.", p.display()) } else { "Opened the pack: Minecraft imports it (it starts if it is closed).".to_string() };
+    let msg = if reveal { format!("Saved the add-on as {}.", p.display()) } else { "Opened the add-on: Minecraft imports it (it starts if it is closed).".to_string() };
     state.live.inner.lock().unwrap().say("info", msg);
     Ok(state.live.status_json())
 }

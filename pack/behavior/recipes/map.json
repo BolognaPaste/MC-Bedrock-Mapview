@@ -1,0 +1,10 @@
+{
+  "format_version": "1.21.90",
+  "minecraft:recipe_shapeless": {
+    "description": { "identifier": "bmlive:map" },
+    "tags": [ "crafting_table" ],
+    "unlock": { "context": "AlwaysUnlocked" },
+    "ingredients": [ { "item": "minecraft:compass" }, { "item": "minecraft:paper" } ],
+    "result": { "item": "bmlive:map" }
+  }
+}

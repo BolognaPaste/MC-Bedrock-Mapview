@@ -1,0 +1,185 @@
+{
+  "namespace": "hud",
+
+  // The behavior pack sends both maps as one title: the title is "bm:m:" + the minimap (or "bm:x" without one) and
+  // the subtitle "bm:f:" + the big map. Each map square is one character of the pack's font pages, one line per
+  // row, and each map ends with "§#§" + the direction the player faces (0 = north ... 7 = north-west), which picks
+  // the arrow drawn over the middle of the map. Titles like that are not shown in the middle of the screen; the two
+  // panels below show them instead.
+  "hud_title_text": {
+    "bindings": [
+      { "binding_name": "#hud_title_text_string" },
+      {
+        "binding_type": "view",
+        "source_property_name": "((#hud_title_text_string - 'bm:') = #hud_title_text_string)",
+        "target_property_name": "#visible"
+      }
+    ]
+  },
+
+  "root_panel": {
+    "modifications": [
+      {
+        "array_name": "controls",
+        "operation": "insert_back",
+        "value": [ { "bm_minimap@hud.bm_minimap": {} }, { "bm_bigmap@hud.bm_bigmap": {} } ]
+      }
+    ]
+  },
+
+  // A map label: tiny glyphs, one per square. The small font with this line padding makes the rows as tall as the
+  // characters are wide (the settings Explorer's World Map uses), so the squares come out square.
+  "bm_map_label": {
+    "type": "label",
+    "anchor_from": "center",
+    "anchor_to": "center",
+    "color": [ 1.0, 1.0, 1.0 ],
+    "shadow": false,
+    "localize": false,
+    "enable_profanity_filter": false,
+    "font_size": "small",
+    "line_padding": 6,
+    "layer": 1
+  },
+
+  // The "you are here" arrow over the middle of a map, shown when the text has its direction mark.
+  "bm_arrow": {
+    "type": "image",
+    "anchor_from": "center",
+    "anchor_to": "center",
+    "layer": 10
+  },
+
+  // Top-right corner: the minimap on a faint dark frame. The label is drawn twice, the second time shifted by a
+  // fraction of a square, which fills the hairline gaps the game leaves between characters.
+  "bm_minimap": {
+    "type": "image",
+    "texture": "textures/ui/Black",
+    "alpha": 0.55,
+    "anchor_from": "top_right",
+    "anchor_to": "top_right",
+    "offset": [ -3, 3 ],
+    "size": [ "100%c + 3px", "100%c + 3px" ],
+    "layer": 40,
+    "controls": [
+      {
+        "bm_minimap_text@hud.bm_map_label": {
+          "text": "#bm_text",
+          "font_scale_factor": 0.17,
+          "bindings": [
+            { "binding_name": "#hud_title_text_string" },
+            { "binding_type": "view", "source_property_name": "(#hud_title_text_string - 'bm:m:')", "target_property_name": "#bm_text" }
+          ],
+          "controls": [
+            {
+              "bm_minimap_fill@hud.bm_map_label": {
+                "text": "#bm_text",
+                "font_scale_factor": 0.17,
+                "offset": [ 0.35, 0.25 ],
+                "bindings": [
+            { "binding_name": "#hud_title_text_string" },
+            { "binding_type": "view", "source_property_name": "(#hud_title_text_string - 'bm:m:')", "target_property_name": "#bm_text" }
+          ]
+              }
+            }
+          ]
+        }
+      },
+      { "bm_mini_arrow_0@hud.bm_mini_arrow": { "texture": "textures/bmlive/arrow_0", "$mark": "§#§0" } },
+      { "bm_mini_arrow_1@hud.bm_mini_arrow": { "texture": "textures/bmlive/arrow_1", "$mark": "§#§1" } },
+      { "bm_mini_arrow_2@hud.bm_mini_arrow": { "texture": "textures/bmlive/arrow_2", "$mark": "§#§2" } },
+      { "bm_mini_arrow_3@hud.bm_mini_arrow": { "texture": "textures/bmlive/arrow_3", "$mark": "§#§3" } },
+      { "bm_mini_arrow_4@hud.bm_mini_arrow": { "texture": "textures/bmlive/arrow_4", "$mark": "§#§4" } },
+      { "bm_mini_arrow_5@hud.bm_mini_arrow": { "texture": "textures/bmlive/arrow_5", "$mark": "§#§5" } },
+      { "bm_mini_arrow_6@hud.bm_mini_arrow": { "texture": "textures/bmlive/arrow_6", "$mark": "§#§6" } },
+      { "bm_mini_arrow_7@hud.bm_mini_arrow": { "texture": "textures/bmlive/arrow_7", "$mark": "§#§7" } }
+    ],
+    "bindings": [
+      { "binding_name": "#hud_title_text_string" },
+      {
+        "binding_type": "view",
+        "source_property_name": "(not ((#hud_title_text_string - 'bm:m:') = #hud_title_text_string))",
+        "target_property_name": "#visible"
+      }
+    ]
+  },
+
+  // The player is the square just right of and below the middle, half a square (about 0.75 units) off.
+  "bm_mini_arrow@hud.bm_arrow": {
+    "size": [ 8, 8 ],
+    "offset": [ 0.75, 0.75 ],
+    "bindings": [
+      { "binding_name": "#hud_title_text_string" },
+      {
+        "binding_type": "view",
+        "source_property_name": "(not ((#hud_title_text_string - $mark) = #hud_title_text_string))",
+        "target_property_name": "#visible"
+      }
+    ]
+  },
+
+  // Middle of the screen: the big map, while the Map item is held (or after /map), drawn twice like the minimap.
+  "bm_bigmap": {
+    "type": "image",
+    "texture": "textures/ui/Black",
+    "alpha": 0.7,
+    "anchor_from": "center",
+    "anchor_to": "center",
+    "size": [ "100%c + 6px", "100%c + 6px" ],
+    "layer": 45,
+    "controls": [
+      {
+        "bm_bigmap_text@hud.bm_map_label": {
+          "text": "#bm_text",
+          "font_scale_factor": 0.21,
+          "bindings": [
+            { "binding_name": "#hud_subtitle_text_string" },
+            { "binding_type": "view", "source_property_name": "(#hud_subtitle_text_string - 'bm:f:')", "target_property_name": "#bm_text" }
+          ],
+          "controls": [
+            {
+              "bm_bigmap_fill@hud.bm_map_label": {
+                "text": "#bm_text",
+                "font_scale_factor": 0.21,
+                "offset": [ 0.4, 0.3 ],
+                "bindings": [
+            { "binding_name": "#hud_subtitle_text_string" },
+            { "binding_type": "view", "source_property_name": "(#hud_subtitle_text_string - 'bm:f:')", "target_property_name": "#bm_text" }
+          ]
+              }
+            }
+          ]
+        }
+      },
+      { "bm_big_arrow_0@hud.bm_big_arrow": { "texture": "textures/bmlive/arrow_0", "$mark": "§#§0" } },
+      { "bm_big_arrow_1@hud.bm_big_arrow": { "texture": "textures/bmlive/arrow_1", "$mark": "§#§1" } },
+      { "bm_big_arrow_2@hud.bm_big_arrow": { "texture": "textures/bmlive/arrow_2", "$mark": "§#§2" } },
+      { "bm_big_arrow_3@hud.bm_big_arrow": { "texture": "textures/bmlive/arrow_3", "$mark": "§#§3" } },
+      { "bm_big_arrow_4@hud.bm_big_arrow": { "texture": "textures/bmlive/arrow_4", "$mark": "§#§4" } },
+      { "bm_big_arrow_5@hud.bm_big_arrow": { "texture": "textures/bmlive/arrow_5", "$mark": "§#§5" } },
+      { "bm_big_arrow_6@hud.bm_big_arrow": { "texture": "textures/bmlive/arrow_6", "$mark": "§#§6" } },
+      { "bm_big_arrow_7@hud.bm_big_arrow": { "texture": "textures/bmlive/arrow_7", "$mark": "§#§7" } }
+    ],
+    "bindings": [
+      { "binding_name": "#hud_subtitle_text_string" },
+      {
+        "binding_type": "view",
+        "source_property_name": "(not ((#hud_subtitle_text_string - 'bm:f:') = #hud_subtitle_text_string))",
+        "target_property_name": "#visible"
+      }
+    ]
+  },
+
+  "bm_big_arrow@hud.bm_arrow": {
+    "size": [ 10, 10 ],
+    "offset": [ 0.95, 0.95 ],
+    "bindings": [
+      { "binding_name": "#hud_subtitle_text_string" },
+      {
+        "binding_type": "view",
+        "source_property_name": "(not ((#hud_subtitle_text_string - $mark) = #hud_subtitle_text_string))",
+        "target_property_name": "#visible"
+      }
+    ]
+  }
+}
