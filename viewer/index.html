@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en" data-dim="overworld">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>World map</title>
+<link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+<canvas id="map3d" hidden aria-hidden="true"></canvas>
+<canvas id="map" tabindex="0" aria-label="World map. Drag to move, scroll to zoom, arrow keys to move, plus and minus to zoom."></canvas>
+<div class="veil" aria-hidden="true"></div>
+
+<div id="pins">
+  <div class="pin spawn" id="pinSpawn" hidden>
+    <button type="button" class="hit" aria-label="Go to spawn">
+      <svg class="glyph" viewBox="-12 -12 24 24" aria-hidden="true"><path d="M0-9 9 0 0 9-9 0Z"/><circle r="2.2"/></svg>
+      <svg class="arrow" viewBox="-12 -12 24 24" aria-hidden="true"><path d="M-6-7 7 0-6 7-2 0Z"/></svg>
+    </button>
+    <span class="tag">Spawn</span>
+  </div>
+  <div class="pin player" id="pinPlayer" hidden>
+    <button type="button" class="hit" aria-label="Go to player">
+      <svg class="glyph" viewBox="-12 -12 24 24" aria-hidden="true"><path d="M-7 9V-1a7 7 0 0 1 14 0V9l-2.3-2L2.3 9 0 7l-2.3 2-2.4-2z"/><circle cx="-2.6" cy="-1.5" r="1.2"/><circle cx="2.6" cy="-1.5" r="1.2"/></svg>
+      <svg class="arrow" viewBox="-12 -12 24 24" aria-hidden="true"><path d="M-6-7 7 0-6 7-2 0Z"/></svg>
+    </button>
+    <span class="tag">Player</span>
+  </div>
+</div>
+
+<div class="top">
+  <section class="panel brk ident" aria-label="World">
+    <svg class="sigil" viewBox="-20 -20 40 40" aria-hidden="true"><ellipse rx="16" ry="13" cy="2"/><path d="M-6-10C-11-3-11 7-6 14M6-10C11-3 11 7 6 14" class="faint"/><path d="M0-10C0-14 1-16 4-17" class="stem"/><path class="eye" d="M-9 0h4l-2-4zM5 0h4L7-4zM0 4l-1.6 3h3.2z"/><path d="M-8 9l2.5 3 2-2.5 1.8 3 1.8-3 2 2.5 2.5-3"/></svg>
+    <div class="who">
+      <h1 id="title">World map</h1>
+      <div class="sub" id="sub">Acquiring signal</div>
+      <div class="livebadge" id="liveBadge" hidden title="Players and changed chunks sent by the companion plugin"><i></i><span id="liveText">Live</span></div>
+    </div>
+    <div class="dims" id="dim" role="group" aria-label="Dimension"></div>
+  </section>
+
+  <section class="panel brk nav" aria-label="Navigation">
+    <form id="go" autocomplete="off">
+      <span class="lbl">Go to</span>
+      <input id="gx" inputmode="numeric" placeholder="X" aria-label="X coordinate">
+      <input id="gz" inputmode="numeric" placeholder="Z" aria-label="Z coordinate">
+      <button class="solid">Go</button>
+    </form>
+    <span class="sep" aria-hidden="true"></span>
+    <button type="button" id="spawn">Spawn</button>
+    <button type="button" id="player">Player</button>
+    <button type="button" id="infoBtn" aria-expanded="false" aria-controls="info" title="World details (I)">Info</button>
+    <button type="button" id="mode3d" aria-pressed="false" title="3D view (V)">3D</button>
+    <span class="sep" aria-hidden="true"></span>
+    <label class="sw"><input type="checkbox" id="grid"><i></i>Chunk grid</label>
+    <label class="sw" id="caveSw" hidden title="Tunnels and caverns found below the surface (C). Orange is shallow, purple is deep, brighter means more open space."><input type="checkbox" id="caves"><i></i>Caves</label>
+    <label class="sw"><input type="checkbox" id="reticle" checked><i></i>Crosshair</label>
+    <label class="sw" id="leafSw"><input type="checkbox" id="leafToggle" checked><i></i>Falling leaves</label>
+  </section>
+</div>
+
+<div class="bottom">
+  <section class="panel brk read" id="hud" aria-label="Cursor position" aria-live="off">
+    <dl>
+      <div class="big"><dt>X</dt><dd id="rx">0</dd><dt>Z</dt><dd id="rz">0</dd><dt>Y</dt><dd id="ry">&ndash;</dd><span class="src" id="rsrc">Cursor</span></div>
+      <div><dt>Chunk</dt><dd id="rc">0, 0</dd><dt>In chunk</dt><dd id="ri">0, 0</dd></div>
+      <div><dt>Zoom</dt><dd id="rs">1&times;</dd></div>
+      <div id="rother" hidden><dt id="rotherL">Nether</dt><dd id="rotherV"></dd></div>
+      <div id="rsp" hidden><dt>To spawn</dt><dd id="rspv"></dd></div>
+      <div id="rpl" hidden><dt>To player</dt><dd id="rplv"></dd></div>
+    </dl>
+    <div class="scale"><i id="scaleBar"></i><span id="scaleTxt">100 blocks</span></div>
+    <div class="copyrow">
+      <button type="button" id="copyXZ" title="Copy the X and Z shown above">Copy X Z</button>
+      <button type="button" id="copyTp" title="Copy a teleport command: /tp X Y Z (Y is one block above the surface when the map has heights)">Copy /tp</button>
+    </div>
+  </section>
+
+  <p class="hints" id="hints">Drag to move. Scroll or +/&minus; to zoom. Arrows move. Double-click zooms in. I: info. G: chunk grid. V: 3D view.</p>
+
+  <div class="cluster">
+    <div class="zoom">
+      <button type="button" id="zin" aria-label="Zoom in">+</button>
+      <button type="button" id="zout" aria-label="Zoom out">&minus;</button>
+      <button type="button" id="fit" aria-label="Fit whole map" title="Fit whole map">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 5V1h4M11 1h4v4M15 11v4h-4M5 15H1v-4"/></svg>
+      </button>
+      <button type="button" id="compass" hidden aria-label="Face north" title="Face north">
+        <svg viewBox="-8 -8 16 16" aria-hidden="true"><path class="n" d="M0-7 3 0h-6z"/><path d="M0 7 3 0h-6z"/></svg>
+      </button>
+    </div>
+    <section class="panel brk overview" aria-label="Overview. Click to move the map.">
+      <canvas id="mini" aria-hidden="true"></canvas>
+    </section>
+  </div>
+</div>
+
+<section id="info" class="panel brk info" aria-label="World details" hidden></section>
+
+<div id="msg" class="panel brk" role="status">Loading map data</div>
+<script src="leaves.js"></script>
+<script src="map3d.js"></script>
+<script src="viewer.js"></script>
+</body>
+</html>

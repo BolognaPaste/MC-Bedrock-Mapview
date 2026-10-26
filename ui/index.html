@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Bedrock world map</title>
+<link rel="stylesheet" href="ui.css">
+</head>
+<body>
+<svg class="web" viewBox="0 0 200 200" aria-hidden="true"><path d="M200 0L200.0 190.0M200 0L127.3 175.5M200 0L65.6 134.4M200 0L24.5 72.7M200 0L10.0 0.0M200.0 28.0Q195.7 21.5 189.3 25.9M189.3 25.9Q187.8 18.3 180.2 19.8M180.2 19.8Q181.7 12.2 174.1 10.7M174.1 10.7Q178.5 4.3 172.0 0.0M200.0 56.0Q191.4 43.1 178.6 51.7M178.6 51.7Q175.6 36.5 160.4 39.6M160.4 39.6Q163.5 24.4 148.3 21.4M148.3 21.4Q156.9 8.6 144.0 0.0M200.0 86.0Q186.8 66.2 167.1 79.5M167.1 79.5Q162.5 56.1 139.2 60.8M139.2 60.8Q143.9 37.5 120.5 32.9M120.5 32.9Q133.8 13.2 114.0 0.0M200.0 118.0Q181.9 90.8 154.8 109.0M154.8 109.0Q148.6 77.0 116.6 83.4M116.6 83.4Q123.0 51.4 91.0 45.2M91.0 45.2Q109.2 18.1 82.0 0.0M200.0 152.0Q176.7 117.0 141.8 140.4M141.8 140.4Q133.7 99.2 92.5 107.5M92.5 107.5Q100.8 66.3 59.6 58.2M59.6 58.2Q83.0 23.3 48.0 0.0"/></svg>
+<div class="moon" aria-hidden="true"></div>
+<div class="fog" aria-hidden="true"><i></i><i></i></div>
+<div class="bats" aria-hidden="true">
+  <svg class="bat b1" viewBox="0 0 40 20"><path d="M20 6c-2-3-6-5-12-4 3 1 4 3 4 5-3-1-7 0-10 3 4-1 7 0 8 2 2-1 4 0 5 3 1-2 2-3 5-3zm0 0c2-3 6-5 12-4-3 1-4 3-4 5 3-1 7 0 10 3-4-1-7 0-8 2-2-1-4 0-5 3-1-2-2-3-5-3z"/></svg>
+  <svg class="bat b2" viewBox="0 0 40 20"><path d="M20 6c-2-3-6-5-12-4 3 1 4 3 4 5-3-1-7 0-10 3 4-1 7 0 8 2 2-1 4 0 5 3 1-2 2-3 5-3zm0 0c2-3 6-5 12-4-3 1-4 3-4 5 3-1 7 0 10 3-4-1-7 0-8 2-2-1-4 0-5 3-1-2-2-3-5-3z"/></svg>
+  <svg class="bat b3" viewBox="0 0 40 20"><path d="M20 6c-2-3-6-5-12-4 3 1 4 3 4 5-3-1-7 0-10 3 4-1 7 0 8 2 2-1 4 0 5 3 1-2 2-3 5-3zm0 0c2-3 6-5 12-4-3 1-4 3-4 5 3-1 7 0 10 3-4-1-7 0-8 2-2-1-4 0-5 3-1-2-2-3-5-3z"/></svg>
+</div>
+<div class="spider" aria-hidden="true"><i></i><svg viewBox="0 0 24 24"><circle cx="12" cy="14" r="5"/><circle cx="12" cy="8" r="3"/><path d="M8 12L2 8M8 14L1 15M9 17L4 22M16 12l6-4M16 14l7 1M15 17l5 5"/></svg></div>
+<div class="shell">
+  <aside class="rail">
+    <div class="brand">
+      <svg class="mark" viewBox="-20 -20 40 40" aria-hidden="true"><ellipse rx="16" ry="13" cy="2"/><path d="M-6-10C-11-3-11 7-6 14M6-10C11-3 11 7 6 14" class="faint"/><path d="M0-10C0-14 1-16 4-17" class="stem"/><path class="eye" d="M-9 0h4l-2-4zM5 0h4L7-4zM0 4l-1.6 3h3.2z"/><path d="M-8 9l2.5 3 2-2.5 1.8 3 1.8-3 2 2.5 2.5-3"/></svg>
+      <div>
+        <h1>Bedrock map</h1>
+        <p>Turn a Minecraft world into a map you can pan and zoom.</p>
+      </div>
+    </div>
+
+    <dl class="telemetry" aria-label="Status">
+      <div><dt>Control panel</dt><dd class="good">This PC only</dd></div>
+      <div><dt>Worlds found</dt><dd id="tCount">Scanning</dd></div>
+      <div><dt>Maps built</dt><dd id="tMaps">0</dd></div>
+      <div><dt>Chunks mapped</dt><dd id="tChunks">0</dd></div>
+      <div><dt>Last build</dt><dd id="tLast">None yet</dd></div>
+      <div><dt>Map builder</dt><dd id="tBuilder">Idle</dd></div>
+    </dl>
+
+    <p class="warn" id="busyNote" hidden>Tip: close Minecraft before building so the world files are not changing.</p>
+
+    <details class="where" id="where">
+      <summary>Where it looks</summary>
+      <ul class="paths" id="searched"></ul>
+      <p class="hint">It also lists <code>.mcworld</code> files in Downloads, Desktop and Documents. Anything else, add by hand below.</p>
+    </details>
+
+    <section class="add" aria-labelledby="addTitle">
+      <h2 id="addTitle">Add a world by hand</h2>
+      <form id="addForm" autocomplete="off">
+        <label for="path">Path to a world folder, a folder with worlds in it, or a <code>.mcworld</code> file</label>
+        <input id="path" type="text" spellcheck="false" placeholder="C:\Users\you\Downloads\My World.mcworld">
+        <button class="solid">Add world</button>
+        <p class="hint">Tip: in File Explorer, hold Shift, right-click the file or folder and choose "Copy as path".</p>
+      </form>
+    </section>
+
+    <nav class="tabs" aria-label="Pages">
+      <button type="button" class="tab" id="tabLive" aria-controls="livePage" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2.4"/><path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4M4.9 4.9a10 10 0 0 0 0 14.2M19.1 4.9a10 10 0 0 1 0 14.2"/></svg>
+        <span><b>Live link</b><small id="liveTabState">Starting</small></span>
+        <i class="dot" id="liveDot" aria-hidden="true"></i>
+      </button>
+    </nav>
+  </aside>
+
+  <main>
+   <div id="worldsPage">
+    <header class="top">
+      <h2>Worlds on this PC</h2>
+      <div class="tools"><button id="leavesBtn" type="button" aria-pressed="true">Falling leaves: on</button><button id="refresh" type="button">Refresh list</button></div>
+    </header>
+    <p class="lead">Your world files are only read, never changed.</p>
+    <div class="rule" aria-hidden="true"><i></i><b>&#9650;</b><i></i></div>
+    <div id="status" role="status" aria-live="polite" class="sr"></div>
+    <ul id="worlds" class="worlds" aria-label="Worlds"></ul>
+    <p id="empty" class="panel empty" hidden></p>
+    <p id="error" class="err" role="alert" hidden></p>
+   </div>
+
+   <div id="livePage" hidden>
+    <header class="top">
+      <h2>Live link</h2>
+      <div class="tools"><button type="button" id="liveBack">Back to worlds</button></div>
+    </header>
+    <p class="lead">Players and changed chunks from a world you are playing show up on its map as they happen.</p>
+    <div class="rule" aria-hidden="true"><i></i><b>&#9650;</b><i></i></div>
+    <p id="liveError" class="err" role="alert" hidden></p>
+
+    <section class="lpanel" aria-labelledby="lPack">
+      <div class="lhead"><h3 id="lPack">In-game pack</h3><span class="state" id="packState">Not seen yet</span></div>
+      <p class="hint">For single-player and co-op worlds hosted on this PC. The pack writes what happens in the world to Minecraft's content log, and this app reads it. No cheats or commands are needed (like any behavior pack, it turns off achievements for that world).</p>
+      <ol class="steps">
+        <li id="stepPack"><b>Install the pack.</b> <button type="button" class="solid" id="packInstall">Install in Minecraft</button> <button type="button" class="mini" id="packSave">Show the .mcpack file</button><span class="hint">Opening it imports it into Minecraft. Share the file with friends who use this app too.</span></li>
+        <li id="stepLog"><b>Turn on Settings &gt; Creator &gt; Content Log File</b> in Minecraft. <span class="check" id="logCheck"></span> <button type="button" class="mini" id="logEnable" hidden>Turn it on for me</button><span class="hint" id="logHint">Leave "Content Log GUI" off, or the pack's messages show on screen.</span></li>
+        <li><b>Add the pack to the world:</b> Edit world, Behavior Packs, Available, <i>Bedrock Map Live</i>, Activate.</li>
+        <li><b>Play.</b> The app notices the world, builds its map if there is none yet, and opens it.</li>
+      </ol>
+      <label class="sw autoopen"><input type="checkbox" id="autoOpen"><i></i>Build and open the map automatically when a world with the pack opens</label>
+      <div class="autobuild" id="autoBuild" hidden><small id="autoText"></small><div class="meter" id="autoMeter"><i></i></div></div>
+      <p class="hint" id="packDetail"></p>
+    </section>
+
+    <section class="lpanel" aria-labelledby="lServer">
+      <div class="lhead"><h3 id="lServer">Server plugins</h3><span class="state" id="liveState">Starting</span></div>
+      <p class="hint lead2">For dedicated servers and other plugins that can send web requests.</p>
+      <form id="liveForm" class="lgrid" autocomplete="off">
+        <label class="sw"><input type="checkbox" id="liveOn"><i></i>Listen for plugins</label>
+        <label class="field">Port <input type="text" id="livePort" inputmode="numeric" maxlength="5"></label>
+        <label class="sw"><input type="checkbox" id="liveLan"><i></i>Allow other devices on my network</label>
+        <button class="solid" id="liveApply">Apply</button>
+      </form>
+      <p class="hint" id="liveLanHint" hidden>Your firewall may ask to allow Bedrock Map. Only devices that know the key below can send data.</p>
+      <dl class="kv">
+        <div><dt>Plugin address</dt><dd><code id="liveUrl">&ndash;</code> <button type="button" class="mini" data-copy="liveUrl">Copy</button></dd></div>
+        <div id="liveLanRow" hidden><dt>From other devices</dt><dd><code id="liveLanUrl"></code> <button type="button" class="mini" data-copy="liveLanUrl">Copy</button></dd></div>
+        <div><dt>Plugin key</dt><dd><code id="liveKey" class="secret">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</code> <button type="button" class="mini" id="liveShowKey" aria-pressed="false">Show</button> <button type="button" class="mini" id="liveCopyKey">Copy</button> <button type="button" class="mini" id="liveNewKey">New key</button></dd></div>
+        <div><dt>Traffic</dt><dd id="liveTotals">&ndash;</dd></div>
+      </dl>
+    </section>
+
+    <section class="lpanel" aria-labelledby="lPlugins">
+      <div class="lhead"><h3 id="lPlugins">Connected plugins</h3><span class="count" id="livePluginCount">0</span></div>
+      <ul class="sessions" id="liveSessions"></ul>
+      <p class="hint" id="liveNoSessions">Nothing is connected. Play a world with the in-game pack, or give a server plugin the address and key above.</p>
+    </section>
+
+    <div class="lcols">
+      <section class="lpanel" aria-labelledby="lPlayers">
+        <div class="lhead"><h3 id="lPlayers">Online players</h3><span class="count" id="livePlayerCount">0</span></div>
+        <ul class="players" id="livePlayers"></ul>
+        <p class="hint" id="liveNoPlayers">Nobody online.</p>
+      </section>
+      <section class="lpanel" aria-labelledby="lLog">
+        <div class="lhead"><h3 id="lLog">Activity</h3></div>
+        <ol class="log" id="liveLog"></ol>
+      </section>
+    </div>
+
+    <details class="lpanel proto">
+      <summary>For plugin makers: protocol <span id="liveProto">v1</span></summary>
+      <p class="hint">JSON over HTTP. Send <code>Authorization: Bearer &lt;key&gt;</code> with every request. The full description is in <code>docs/live-protocol.md</code>.</p>
+      <ul class="notes">
+        <li><code>GET /v1/ping</code> checks the app is running (no key needed)</li>
+        <li><code>POST /v1/hello</code> starts a session: plugin, world and server names</li>
+        <li><code>POST /v1/push</code> sends messages: <code>players</code>, <code>chunk</code>, <code>event</code>, <code>world</code></li>
+        <li><code>POST /v1/bye</code> ends the session</li>
+      </ul>
+    </details>
+   </div>
+    <footer class="tombs" aria-hidden="true">
+      <svg viewBox="0 0 30 36"><path d="M3 36V14a12 12 0 0 1 24 0v22z"/><path d="M15 9v10M11 13h8" class="x"/></svg>
+      <svg viewBox="0 0 30 36" class="s"><path d="M2 36V12a13 13 0 0 1 26 0v24z"/><path d="M9 16h12M9 21h12M9 26h8" class="x"/></svg>
+      <svg viewBox="0 0 30 36"><path d="M4 36V18l11-12 11 12v18z"/><path d="M11 22h8M11 27h8" class="x"/></svg>
+      <p>Here lies your free time. Happy Halloween.</p>
+    </footer>
+  </main>
+</div>
+<script src="leaves.js"></script>
+<script src="ui.js"></script>
+<script src="live.js"></script>
+</body>
+</html>
