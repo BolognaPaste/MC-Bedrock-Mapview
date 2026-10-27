@@ -63,18 +63,21 @@ state), `src-tauri/src/live_tiles.rs` (drawing chunks into tiles) and `ui/live.j
 
 ## Build and run
 
-You need [Rust](https://rustup.rs) (1.80 or newer) and, on Windows, the WebView2 runtime (already part of Windows 11).
-On Linux you also need the usual Tauri system packages (see https://tauri.app/start/prerequisites/).
+You need [Rust](https://rustup.rs) (1.80 or newer), [Node.js](https://nodejs.org) (for npm, which runs the Tauri
+CLI) and, on Windows, the WebView2 runtime (already part of Windows 11). On Linux you also need the usual Tauri system
+packages (see https://tauri.app/start/prerequisites/).
+
+From the project folder:
 
 ```
-cargo install tauri-cli --version "^2"
-cd src-tauri
-cargo tauri dev        # run it
-cargo tauri build      # make an installer (src-tauri/target/release/bundle)
-cargo test             # a few unit tests
+npm install            # once: installs the Tauri CLI (@tauri-apps/cli)
+npm run dev            # run it, rebuilding when the Rust code changes
+npm run build          # make an installer (src-tauri/target/release/bundle: .exe setup and .msi on Windows)
 ```
 
-`cargo tauri icon src-tauri/icons/icon.png` regenerates the icon set (including `.icns` for macOS) if you want a
+The unit tests run with Cargo: `cd src-tauri` and then `cargo test`.
+
+`npm run tauri icon src-tauri/icons/icon.png` regenerates the icon set (including `.icns` for macOS) if you want a
 different icon.
 
 ## Layout
