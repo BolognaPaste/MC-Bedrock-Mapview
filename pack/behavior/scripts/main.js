@@ -1,6 +1,6 @@
 // Bedrock Map Live: maps the world around players as they play, and shows it in game: a minimap in the top-right
-// corner, and a big map in the middle of the screen while you hold the Map item (or after /map). It also feeds the
-// Bedrock Map app's live map.
+// corner with your status effects listed down its left side, and a big map in the middle of the screen when you
+// use the Map item (or after /map). It also feeds the Bedrock Map app's live map.
 //
 // The map data is the same live feed the app gets: each scanned chunk's top blocks. In game it is kept as a colour and
 // a height per block column, in 128 x 128 block regions saved in the world (dynamic properties), so the map survives
@@ -14,7 +14,7 @@
 import { world, system, ItemStack, CommandPermissionLevel, CustomCommandStatus } from '@minecraft/server';
 
 const TAG = 'BMLIVE1 ';
-const VERSION = '1.5.0';
+const VERSION = '1.5.6';
 const DIMS = { 'minecraft:overworld': 0, 'minecraft:nether': 1, 'minecraft:the_end': 2 };
 const DIM_IDS = ['minecraft:overworld', 'minecraft:nether', 'minecraft:the_end'];
 const EXPLORE_RADIUS = 8; // chunks around each player that are scanned once per session, so new ground shows up
@@ -93,36 +93,44 @@ const blend = (a, w, under) => [0, 1, 2].map(i => Math.round(w[i] * a + under[i]
 // counts characters or bytes (1.3.0 saved one character per column above U+0800, three bytes each in UTF-8, and
 // those saves could be refused). Strips with nothing mapped are not saved. Changed strips are saved every 10 s, when
 // a player leaves and when the world closes.
-const R = 128, STRIP = 32, STRIPS = R / STRIP, STRIP_CHARS = STRIP * R * 5;
+//
+// Each region also has an overview: 32 x 32 cells, each the average of 4 x 4 columns ('bmlive:o4:dim:rx:rz', 5120
+// characters). The zoomed-out big map (4 to 16 blocks per square) draws from overviews, so it never loads full
+// regions: at 16 blocks per square it covers about 600 regions, far more than fit in memory, and loading them all
+// made the game stutter every time it redrew. Overviews are worked out from the region whenever it is saved.
+const R = 128, STRIP = 32, STRIPS = R / STRIP, STRIP_CHARS = STRIP * R * 5, OV = 32, OV_CHARS = OV * OV * 5;
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 const B64V = new Uint8Array(128);
 for (let i = 0; i < 64; i++) B64V[B64.charCodeAt(i)] = i;
-const regions = new Map(); // "dim:rx:rz" -> { key, c: Uint16Array, hw: Uint16Array, dirty (bit per strip), used }
+const regions = new Map(); // "dim:rx:rz" -> { key, c, hw (Uint16Array R * R), dirty (bit per strip), ovDirty, used, legacy }
+const overviews = new Map(); // "dim:rx:rz" -> { c, hw (Uint16Array OV * OV), stale }, least recently used first
 let MAX_REGIONS = 160; // kept in memory (64 KB each); the rest stay saved in the world
+let MAX_OVERVIEWS = 1024; // 4 KB each
 let saveBlockedUntil = 0; // the world refused map data: try again later
 let tickNow = 0;
 let mapRev = 0; // goes up whenever a map column changes, so drawn maps know to redraw
 try {
   const tier = system.serverSystemInfo.memoryTier; // MemoryTier: 0 super low, 1 low, 2 mid, 3 high, 4 super high
-  if (typeof tier === 'number' && tier <= 1) MAX_REGIONS = 64;
+  if (typeof tier === 'number' && tier <= 1) { MAX_REGIONS = 64; MAX_OVERVIEWS = 384; }
 } catch {}
 const stripKey = (k, s) => 'bmlive:m4:' + k + ':' + s;
+const ovKey = k => 'bmlive:o4:' + k;
 
-function decodeStrip(s, r, strip) {
-  let o = strip * STRIP * R;
-  for (let i = 0; i < STRIP_CHARS; i += 5, o++) {
+// count columns from `from` in c/hw, five base64 characters each
+function decodeCols(s, c, hw, from, count) {
+  for (let i = 0, o = from; i < count * 5; i += 5, o++) {
     const v = (((((B64V[s.charCodeAt(i)] << 6) | B64V[s.charCodeAt(i + 1)]) << 6 | B64V[s.charCodeAt(i + 2)]) << 6 | B64V[s.charCodeAt(i + 3)]) << 6) | B64V[s.charCodeAt(i + 4)];
-    r.c[o] = v >>> 14;
-    r.hw[o] = v & 16383;
+    c[o] = v >>> 14;
+    hw[o] = v & 16383;
   }
 }
-// The strip as a string, or null when nothing in it is mapped.
+// The columns as a string, or null when none of them is mapped.
 const encodeBuf = new Uint8Array(STRIP_CHARS);
-function encodeStrip(r, strip) {
+function encodeCols(c, hw, from, count) {
   let any = false;
-  for (let i = 0, o = strip * STRIP * R; i < STRIP_CHARS; i += 5, o++) {
-    const v = r.c[o] * 16384 + r.hw[o];
-    if (r.c[o]) any = true;
+  for (let i = 0, o = from; i < count * 5; i += 5, o++) {
+    const v = c[o] * 16384 + hw[o];
+    if (c[o]) any = true;
     encodeBuf[i] = B64.charCodeAt((v >>> 24) & 63);
     encodeBuf[i + 1] = B64.charCodeAt((v >>> 18) & 63);
     encodeBuf[i + 2] = B64.charCodeAt((v >>> 12) & 63);
@@ -131,7 +139,7 @@ function encodeStrip(r, strip) {
   }
   if (!any) return null;
   let s = '';
-  for (let i = 0; i < STRIP_CHARS; i += 4096) s += String.fromCharCode.apply(null, encodeBuf.subarray(i, i + 4096));
+  for (let i = 0; i < count * 5; i += 4096) s += String.fromCharCode.apply(null, encodeBuf.subarray(i, Math.min(i + 4096, count * 5)));
   return s;
 }
 
@@ -141,38 +149,104 @@ function region(dim, rx, rz, create) {
   let r = regions.get(k);
   if (r) { r.used = tickNow; return r; }
   if (!create && missing.has(k) && tickNow - missing.get(k) < 200) return null;
-  r = { key: k, c: new Uint16Array(R * R), hw: new Uint16Array(R * R), dirty: 0, used: tickNow, legacy: false };
-  let found = false;
+  // Read what is saved first, and only make room for the region when there is something (or it is being created):
+  // drawing checks many regions that were never mapped.
+  const strips = [];
+  let legacy = null;
   try {
     for (let s = 0; s < STRIPS; s++) {
       const v = world.getDynamicProperty(stripKey(k, s));
-      if (typeof v === 'string' && v.length === STRIP_CHARS) { decodeStrip(v, r, s); found = true; }
+      if (typeof v === 'string' && v.length === STRIP_CHARS) strips[s] = v;
     }
-    if (!found) {
+    if (!strips.length) {
       // a region saved by pack 1.3.0: read it, and save it again in the new form
       const sc = world.getDynamicProperty('bmlive:c3:' + k), sh = world.getDynamicProperty('bmlive:h3:' + k);
-      if (typeof sc === 'string' && typeof sh === 'string' && sc.length === R * R && sh.length === R * R) {
-        for (let i = 0; i < R * R; i++) { r.c[i] = sc.charCodeAt(i) - 0x100; r.hw[i] = sh.charCodeAt(i) - 0x100; }
-        r.dirty = (1 << STRIPS) - 1;
-        r.legacy = found = true;
-      }
+      if (typeof sc === 'string' && typeof sh === 'string' && sc.length === R * R && sh.length === R * R) legacy = [sc, sh];
     }
   } catch {}
-  if (!found && !create) { missing.set(k, tickNow); return null; }
+  if (!strips.length && !legacy && !create) { missing.set(k, tickNow); return null; }
   missing.delete(k);
+  r = { key: k, c: new Uint16Array(R * R), hw: new Uint16Array(R * R), dirty: 0, ovDirty: false, used: tickNow, legacy: !!legacy };
+  strips.forEach((v, s) => decodeCols(v, r.c, r.hw, s * STRIP * R, STRIP * R));
+  if (legacy) {
+    for (let i = 0; i < R * R; i++) { r.c[i] = legacy[0].charCodeAt(i) - 0x100; r.hw[i] = legacy[1].charCodeAt(i) - 0x100; }
+    r.dirty = (1 << STRIPS) - 1;
+    r.ovDirty = true;
+  }
   regions.set(k, r);
   if (regions.size > MAX_REGIONS) {
+    // Drop the least recently used region that is fully saved. One with unsaved changes stays (even past the limit)
+    // until it can be saved: dropping it would lose them.
     let old = null;
-    for (const v of regions.values()) if (v !== r && (!old || v.used < old.used)) old = v;
-    if (old) { saveRegion(old); regions.delete(old.key); }
+    for (const v of regions.values()) if (v !== r && (!old || v.used < old.used) && !v.dirty) old = v;
+    if (!old) {
+      for (const v of regions.values()) if (v !== r && (!old || v.used < old.used) && tickNow >= saveBlockedUntil) old = v;
+      if (old && !saveRegion(old)) old = null;
+    }
+    if (old) {
+      if (old.ovDirty) saveOverview(old); // the overview can be worked out again later, so this may fail
+      regions.delete(old.key);
+    }
   }
   return r;
 }
 
-// Saves a region's changed strips. Returns false when the world refused (the strip stays marked as changed).
+// A region's overview: each cell the average colour and height of the mapped columns among its 4 x 4, water when
+// most of them are.
+function makeOverview(r) {
+  const c = new Uint16Array(OV * OV), hw = new Uint16Array(OV * OV);
+  for (let cz = 0; cz < OV; cz++) {
+    for (let cx = 0; cx < OV; cx++) {
+      let cr = 0, cg = 0, cb = 0, h = 0, k = 0, water = 0;
+      for (let dz = 0; dz < 4; dz++) {
+        for (let dx = 0, i = ((cz * 4 + dz) << 7) | (cx * 4); dx < 4; dx++, i++) {
+          if (!r.c[i]) continue;
+          const v = r.c[i] - 1;
+          cr += v >> 10; cg += (v >> 5) & 31; cb += v & 31; h += r.hw[i] & 511; k++;
+          if (r.hw[i] > 511) water++;
+        }
+      }
+      if (!k) continue;
+      c[cz * OV + cx] = 1 + ((Math.round(cr / k) << 10) | (Math.round(cg / k) << 5) | Math.round(cb / k));
+      hw[cz * OV + cx] = Math.round(h / k) | (water * 2 >= k ? 512 : 0);
+    }
+  }
+  return { c, hw, stale: false };
+}
+function keepOverview(k, ov) {
+  overviews.delete(k);
+  overviews.set(k, ov);
+  if (overviews.size > MAX_OVERVIEWS) overviews.delete(overviews.keys().next().value);
+}
+// The overview of a region, or null when nothing there is mapped. From memory when possible; else the saved
+// overview; else (regions saved before overviews existed) the full region, once, and its overview is saved.
+function overview(dim, rx, rz) {
+  const k = dim + ':' + rx + ':' + rz, r = regions.get(k);
+  let ov = overviews.get(k);
+  if (ov && !(ov.stale && r)) { keepOverview(k, ov); return ov; }
+  if (r) { ov = makeOverview(r); keepOverview(k, ov); return ov; }
+  if (missing.has(k) && tickNow - missing.get(k) < 200) return null;
+  try {
+    const s = world.getDynamicProperty(ovKey(k));
+    if (typeof s === 'string' && s.length === OV_CHARS) {
+      ov = { c: new Uint16Array(OV * OV), hw: new Uint16Array(OV * OV), stale: false };
+      decodeCols(s, ov.c, ov.hw, 0, OV * OV);
+      keepOverview(k, ov);
+      return ov;
+    }
+  } catch {}
+  const full = region(dim, rx, rz, false);
+  if (!full) return null;
+  full.ovDirty = true;
+  ov = makeOverview(full);
+  keepOverview(k, ov);
+  return ov;
+}
+
+// Saves one strip of a region. Returns false when the world refused (the strip stays marked as changed).
 function saveStrip(r, s) {
   try {
-    world.setDynamicProperty(stripKey(r.key, s), encodeStrip(r, s) ?? undefined);
+    world.setDynamicProperty(stripKey(r.key, s), encodeCols(r.c, r.hw, s * STRIP * R, STRIP * R) ?? undefined);
     r.dirty &= ~(1 << s);
   } catch (e) {
     saveBlockedUntil = tickNow + 6000;
@@ -185,19 +259,37 @@ function saveStrip(r, s) {
   }
   return true;
 }
-function saveRegion(r) {
-  for (let s = 0; s < STRIPS; s++) if (r.dirty & (1 << s) && !saveStrip(r, s)) return;
+function saveOverview(r) {
+  const ov = makeOverview(r);
+  keepOverview(r.key, ov);
+  try {
+    world.setDynamicProperty(ovKey(r.key), encodeCols(ov.c, ov.hw, 0, OV * OV) ?? undefined);
+    r.ovDirty = false;
+    return true;
+  } catch {
+    return false;
+  }
 }
-// Everything changed, at once (the world is closing, or a region is about to be dropped from memory).
+// The next unsaved piece of a region: a changed strip, then its overview. False when the world refused it.
+const unsaved = r => r.dirty || r.ovDirty;
+function saveNext(r) {
+  for (let s = 0; s < STRIPS; s++) if (r.dirty & (1 << s)) return saveStrip(r, s);
+  return saveOverview(r);
+}
+// Everything a region has not saved yet, at once. True when nothing is left unsaved.
+function saveRegion(r) {
+  while (unsaved(r)) if (!saveNext(r)) return false;
+  return true;
+}
+// Every region, at once (the world is closing).
 const saveAll = () => { for (const r of regions.values()) saveRegion(r); };
-// The same, a strip per tick at most, so saving never makes the game stutter.
+// The same, a piece per tick at most, so saving never makes the game stutter.
 let saving = false;
 function* saveJob() {
   try {
     for (const r of [...regions.values()]) {
-      for (let s = 0; s < STRIPS; s++) {
-        if (!(r.dirty & (1 << s))) continue;
-        if (tickNow < saveBlockedUntil || !saveStrip(r, s)) return;
+      while (unsaved(r)) {
+        if (tickNow < saveBlockedUntil || !saveNext(r)) return;
         yield;
       }
     }
@@ -208,7 +300,7 @@ function* saveJob() {
 function saveSoon() {
   if (saving || tickNow < saveBlockedUntil) return;
   for (const r of regions.values()) {
-    if (r.dirty) { saving = true; system.runJob(saveJob()); return; }
+    if (unsaved(r)) { saving = true; system.runJob(saveJob()); return; }
   }
 }
 // Map data from pack 1.1 and 1.2 (one 4-bit colour per column, no heights) is not used any more: free the space.
@@ -230,7 +322,15 @@ function mapColumn(dim, x, z, c) {
   const lz = z - Math.floor(z / R) * R, i = lz * R + (x - Math.floor(x / R) * R);
   const code = 1 + (((rgb[0] >> 3) << 10) | ((rgb[1] >> 3) << 5) | (rgb[2] >> 3));
   const hw = Math.max(0, Math.min(511, c.y + 64)) | (Math.min(c.water || 0, 31) << 9);
-  if (r.c[i] !== code || r.hw[i] !== hw) { r.c[i] = code; r.hw[i] = hw; r.dirty |= 1 << (lz >> 5); mapRev++; }
+  if (r.c[i] !== code || r.hw[i] !== hw) {
+    r.c[i] = code;
+    r.hw[i] = hw;
+    r.dirty |= 1 << (lz >> 5);
+    r.ovDirty = true;
+    const ov = overviews.get(r.key);
+    if (ov) ov.stale = true;
+    mapRev++;
+  }
 }
 
 /* ---- the world: a random id kept in the world, so the app can remember which map it belongs to ---- */
@@ -428,14 +528,21 @@ for (let s = -MAX_SLOPE; s <= MAX_SLOPE; s++) {
 function* drawGrid(d, x0, z0, cols, rows, scale, out) {
   const ax = x0 - scale, az = z0 - scale;
   const rx0 = ax >> 7, rz0 = az >> 7, rx1 = (x0 + cols * scale - 1) >> 7, rz1 = (z0 + rows * scale - 1) >> 7, rw = rx1 - rx0 + 1;
-  const regs = [];
-  for (let rz = rz0; rz <= rz1; rz++) for (let rx = rx0; rx <= rx1; rx++) regs.push(region(d, rx, rz, false));
+  // Zoomed out to 4 blocks per square or more, the regions' overviews (one cell per 4 x 4 columns) are enough, and
+  // far smaller. The regions are looked up one per step of the job, so loading many never holds up a game tick.
+  const coarse = scale >= 4, regs = [];
+  for (let rz = rz0; rz <= rz1; rz++) {
+    for (let rx = rx0; rx <= rx1; rx++) {
+      regs.push(coarse ? overview(d, rx, rz) : region(d, rx, rz, false));
+      yield;
+    }
+  }
   const half = scale >> 1, slopeDiv = Math.sqrt(scale);
   let sc = 0, sh = 0, sw = false; // the sampled square: colour (1 + 5-bit rgb, 0 = not mapped), height, water
   const sample = (x, z) => {
     const r = regs[((z >> 7) - rz0) * rw + (x >> 7) - rx0];
     if (!r) { sc = 0; return; }
-    const i = ((z & 127) << 7) | (x & 127);
+    const i = coarse ? (((z & 127) >> 2) << 5) | ((x & 127) >> 2) : ((z & 127) << 7) | (x & 127);
     sc = r.c[i];
     sh = r.hw[i] & 511;
     sw = r.hw[i] > 511;
@@ -482,11 +589,12 @@ const ZOOMS = [1, 2, 4, 8, 16]; // blocks per map square
 const MAP_ITEM = 'bmlive:map';
 const MINI = 64; // minimap: 64 x 64 squares, one block each
 const BIG_COLS = 256, BIG_ROWS = 144; // big map
-const opts = new Map(); // player id -> { mini, zoom (big map), big (opened with /map), cleared, wasBig }
+// player id -> { mini, zoom (big map), big (opened with /map), open (opened with the Map item), lastUse, cleared, wasBig }
+const opts = new Map();
 function optsOf(p) {
   let o = opts.get(p.id);
   if (!o) {
-    o = { mini: true, zoom: 0, big: false, cleared: false, wasBig: false };
+    o = { mini: true, zoom: 0, big: false, open: false, lastUse: -100, cleared: false, wasBig: false };
     try { const s = p.getDynamicProperty('bmlive:opts'); if (typeof s === 'string') Object.assign(o, JSON.parse(s)); } catch {}
     o.big = false;
     opts.set(p.id, o);
@@ -531,54 +639,126 @@ function holdingMap(p) {
   }
 }
 
+/* ---- status effects: a list down the minimap's left side ---- */
+
+// The game's own effect icons cannot be laid out as a list (its renderer places them itself), so the pack lists the
+// effects: a line each, with a bottle of the effect's colour (character U+E400 + its place in EFFECTS, from font page
+// glyph_E4.png; the cell after the last is a grey bottle for effects missing there), its name and level, and the
+// time left. The app fills EFFECTS in when it packages the add-on: [id, name, 1 if harmful].
+const EFFECTS = /*BM:EFFECTS*/[['speed', 'Speed', 0], ['poison', 'Poison', 1]]/*BM:END*/;
+const EFFECT_AT = new Map(EFFECTS.map((e, i) => [e[0], i]));
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+const MAX_EFFECT_LINES = 12;
+// One effect's line. The HUD puts the list on inventory grey, so: the bottle in its own colours (white text, §f,
+// leaves a glyph's colours as they are), the name black (dark red when harmful), the time dark grey.
+function effectLine(typeId, amplifier, duration) {
+  const id = typeId.startsWith('minecraft:') ? typeId.slice(10) : typeId, i = EFFECT_AT.get(id);
+  const name = i === undefined ? id.split('_').map((w, n) => (n && /^(of|the|and)$/.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1))).join(' ') : EFFECTS[i][1];
+  const level = amplifier > 0 ? ' ' + (ROMAN[amplifier] || amplifier + 1) : '';
+  const s = Math.ceil(duration / 20);
+  const time = duration < 0 || s >= 6000 ? '**:**' : Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); // 100 min or more: as good as endless
+  return '§f' + String.fromCharCode(0xe400 + (i ?? EFFECTS.length)) + ' ' + (i !== undefined && EFFECTS[i][2] ? '§4' : '§0') + name + level + ' §8' + time;
+}
+// A player's lines, or '' without effects.
+function effectLines(p) {
+  let list;
+  try { list = p.getEffects(); } catch { return ''; }
+  const lines = [];
+  for (const e of list) {
+    try { lines.push(effectLine(e.typeId, e.amplifier, e.duration)); } catch {}
+  }
+  if (lines.length > MAX_EFFECT_LINES) lines.splice(MAX_EFFECT_LINES - 1, lines.length, '§8+' + (lines.length - MAX_EFFECT_LINES + 1) + ' more');
+  return lines.join('\n');
+}
+// The content log gets a line whenever a player's effects change (names and levels, not every tick of the timers),
+// so a report of a missing list shows whether the game gave the script any effects. The app ignores these lines.
+function logEffects(p, v, fx) {
+  const now = fx.replace(/ §8[^\n]*/g, '');
+  if (now === v.fxLogged) return;
+  v.fxLogged = now;
+  send('fx', { player: p.name, effects: now ? now.split('\n').map(l => l.replace(/§./g, '').slice(2)) : [] });
+}
+// The effect lines travel in the minimap's title, in a block of exactly FX_BYTES bytes (UTF-8) right after "bm:m:":
+// the HUD cuts the title after 5 + FX_BYTES bytes ('%.605s' in hud_screen.json; format lengths in JSON UI count
+// bytes). That is the short cut other packs make; cutting after the 12 KB minimap instead showed nothing in game.
+// The block is padded with "§r" (3 bytes, not drawn), plus a space or two at the end of the first line (where they do
+// not show) when the bytes do not come out even. Lines that do not fit become "+N more".
+const FX_BYTES = 600;
+const utf8Bytes = s => {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); n += c < 0x80 ? 1 : c < 0x800 ? 2 : 3; }
+  return n;
+};
+function effectBlock(fx) {
+  const lines = fx ? fx.split('\n') : [];
+  let text = '';
+  for (let i = 0; i < lines.length; i++) {
+    const next = (text ? text + '\n' : '') + lines[i];
+    if (utf8Bytes(next) + (i < lines.length - 1 ? 20 : 0) > FX_BYTES) { text += '\n§8+' + (lines.length - i) + ' more'; break; }
+    text = next;
+  }
+  let pad = FX_BYTES - utf8Bytes(text);
+  const odd = pad % 3, nl = text.indexOf('\n');
+  if (odd) {
+    text = nl < 0 ? text + ' '.repeat(odd) : text.slice(0, nl) + ' '.repeat(odd) + text.slice(nl);
+    pad -= odd;
+  }
+  return text + '§r'.repeat(pad / 3);
+}
+
 // Both maps go out as one title, which the resource pack's HUD shows instead of a normal title: the title is "bm:"
-// then "m:" + the minimap (top-right corner) or "x", and the subtitle "bm:f:" + the big map (middle). Each ends with
-// "§#§" + the direction you face (0..7), which picks the arrow the HUD puts over the middle of the map (formatting
-// codes are not drawn). Drawing runs as a job, one per player at a time; standing still costs nothing, and a
-// title that has not changed is only sent again to keep it on screen.
+// then "m:" + the effect block and the minimap (top-right corner) or "x", and the subtitle "bm:f:" + the big map
+// (middle). Each map ends with "§#§" + the direction you face (0..7), which picks the arrow the HUD puts over the
+// middle of the map (formatting codes are not drawn). Drawing runs as a job, one per player at a time; standing
+// still costs nothing, and a title that has not changed is only sent again to keep it on screen.
 const views = new Map(); // player id -> { busy, mini: { key, text }, big: { key, text }, sent, sentAt }
 function viewOf(p) {
   let v = views.get(p.id);
-  if (!v) views.set(p.id, (v = { busy: false, mini: { key: '', text: '' }, big: { key: '', text: '' }, sent: '', sentAt: 0 }));
+  if (!v) views.set(p.id, (v = { busy: false, mini: { key: '', text: '' }, big: { key: '', text: '' }, sent: '', sentAt: 0, fxLogged: '' }));
   return v;
 }
-function show(p, v, mf, bf, dir) {
-  const want = (mf ? v.mini.key : '-') + '#' + (bf ? v.big.key : '-') + '#' + dir;
+function show(p, v, mf, bf, dir, fx) {
+  const want = (mf ? v.mini.key + '#' + fx : '-') + '#' + (bf ? v.big.key : '-') + '#' + dir;
   if (want === v.sent && tickNow - v.sentAt < 30) return;
   const mark = '§#§' + dir;
-  p.onScreenDisplay.setTitle('bm:' + (mf ? 'm:' + v.mini.text + mark : 'x'), { subtitle: bf ? 'bm:f:' + v.big.text + mark : '', fadeInDuration: 0, stayDuration: 60, fadeOutDuration: 0 });
+  p.onScreenDisplay.setTitle('bm:' + (mf ? 'm:' + effectBlock(fx) + v.mini.text + mark : 'x'), { subtitle: bf ? 'bm:f:' + v.big.text + mark : '', fadeInDuration: 0, stayDuration: 60, fadeOutDuration: 0 });
   v.sent = want;
   v.sentAt = tickNow;
 }
-function* redraw(p, v, mf, bf) {
+function* redraw(p, v, mf, bf, fx) {
   try {
     if (mf && mf.key !== v.mini.key) v.mini = { key: mf.key, text: yield* render(mf) };
     if (bf && bf.key !== v.big.key) v.big = { key: bf.key, text: yield* render(bf) };
-    show(p, v, mf, bf, dirOf(p.getRotation().y));
+    show(p, v, mf, bf, dirOf(p.getRotation().y), fx);
   } catch {
     // the player left
   } finally {
     v.busy = false;
   }
 }
-// /maptest: a test pattern in place of the maps. First the 256 map colours, 16 rows of 16 (each twice); then three
-// rows of 32 characters that should end in the same place: one colour, two colours from the map page, and the map
-// page alternating with a second font page (magenta). If that last row ends somewhere else, switching pages moves
-// text, which is why the map uses one page.
+// /maptest: a test pattern in place of the big map. First the 256 map colours, 16 rows of 16 (each twice); then
+// three rows of 32 characters that should end in the same place: one colour, two colours from the map page, and the
+// map page alternating with a second font page (magenta). If that last row ends somewhere else, switching pages
+// moves text, which is why the map uses one page. The minimap stays (a grass square if it was off), with three
+// made-up effects listed beside it, so the effect list can be checked without drinking anything.
+const TEST_GRASS = 0xe200 + PAL[(SH[MAX_SLOPE * 32 + 13] << 10) | (SH[MAX_SLOPE * 32 + 19] << 5) | SH[MAX_SLOPE * 32 + 7]];
 const TEST_TEXT = (() => {
   const row = codes => String.fromCharCode(...codes);
   const palette = Array.from({ length: 16 }, (_, r) => row(Array.from({ length: 32 }, (_, i) => 0xe200 + r * 16 + (i >> 1))));
-  const grass = 0xe200 + PAL[(SH[MAX_SLOPE * 32 + 13] << 10) | (SH[MAX_SLOPE * 32 + 19] << 5) | SH[MAX_SLOPE * 32 + 7]];
   const alt = (a, b) => row(Array.from({ length: 32 }, (_, i) => (i & 1 ? b : a)));
-  return [...palette, alt(UNKNOWN, UNKNOWN), alt(grass, grass), alt(grass, MARK_RING), alt(grass, 0xe300)].join('\n');
+  return [...palette, alt(UNKNOWN, UNKNOWN), alt(TEST_GRASS, TEST_GRASS), alt(TEST_GRASS, MARK_RING), alt(TEST_GRASS, 0xe300)].join('\n');
 })();
+const TEST_MINI = Array.from({ length: MINI }, () => String.fromCharCode(TEST_GRASS).repeat(MINI)).join('\n');
+const TEST_EFFECTS = [effectLine('minecraft:speed', 1, 1660), effectLine('minecraft:poison', 0, 900), effectLine('minecraft:village_hero', 0, -1)].join('\n');
 function drawMaps() {
   for (const p of world.getAllPlayers()) {
     try {
-      const o = optsOf(p), v = viewOf(p), big = o.big || holdingMap(p);
+      const o = optsOf(p), v = viewOf(p);
+      if (o.open && !holdingMap(p)) o.open = false; // put away: closed, and scrolling back over it leaves it closed
+      const big = o.big || o.open;
       if (o.test) {
         if (tickNow - v.sentAt >= 20) {
-          p.onScreenDisplay.setTitle('bm:x', { subtitle: 'bm:f:' + TEST_TEXT, fadeInDuration: 0, stayDuration: 60, fadeOutDuration: 0 });
+          p.onScreenDisplay.setTitle('bm:m:' + effectBlock(TEST_EFFECTS) + (v.mini.text || TEST_MINI) + '§#§0', { subtitle: 'bm:f:' + TEST_TEXT, fadeInDuration: 0, stayDuration: 60, fadeOutDuration: 0 });
           v.sent = '';
           v.sentAt = tickNow;
         }
@@ -594,10 +774,12 @@ function drawMaps() {
       if (v.busy) continue;
       const mf = o.mini ? frame(p, MINI, MINI, 1) : null;
       const bf = big ? frame(p, BIG_COLS, BIG_ROWS, zoomOf(o)) : null;
+      const fx = mf ? effectLines(p) : '';
+      logEffects(p, v, fx);
       if ((mf && mf.key !== v.mini.key) || (bf && bf.key !== v.big.key)) {
         v.busy = true;
-        system.runJob(redraw(p, v, mf, bf));
-      } else show(p, v, mf, bf, dirOf(p.getRotation().y));
+        system.runJob(redraw(p, v, mf, bf, fx));
+      } else show(p, v, mf, bf, dirOf(p.getRotation().y), fx);
     } catch {}
   }
 }
@@ -613,17 +795,39 @@ function zoomOut(p) {
   saveOpts(p, o);
   try { p.onScreenDisplay.setActionBar('Map: ' + perSquare(zoomOf(o))); } catch {}
 }
+// Using the Map opens the big map and using it again closes it (however it was opened, /map too); using it while
+// crouching zooms out (opening the map if it was closed). Holding the button down can repeat the use every few
+// ticks, so a use within 6 ticks of the last one is the same press.
+function useMap(p) {
+  const o = optsOf(p), now = system.currentTick, again = now - o.lastUse < 6;
+  o.lastUse = now;
+  if (again) return;
+  let crouching = false;
+  try { crouching = !!p.isSneaking; } catch {}
+  if (crouching) {
+    zoomOut(p);
+    o.open = true;
+    o.wasBig = true; // the zoom message is enough; no "Map: ..." hint on top of it
+  } else if (o.open || o.big) o.open = o.big = false;
+  else o.open = true;
+}
 
 // How to pick the Map and use it, in the words of the player's device (consoles have no number keys, phones no
 // right click). PlatformType is "Console", "Desktop" or "Mobile".
 function platformOf(p) {
   try { return String(p.clientSystemInfo.platformType); } catch { return 'Desktop'; }
 }
-const PICK = { Desktop: ' Press 9 to look at it.', Console: ' Switch to it with the bumpers to look at it.', Mobile: ' Tap it in the hotbar to look at it.' };
-const USE = { Desktop: 'right-click it to zoom out', Console: 'use it (left trigger) to zoom out', Mobile: 'use it to zoom out' };
+const PICK = { Desktop: ' It is in hotbar slot 9.', Console: ' It is in the last hotbar slot.', Mobile: ' It is in the last hotbar slot.' };
+const GUIDE = {
+  Desktop: 'right-click the Map to open the big map, right-click again to close it, and crouch + right-click to zoom out',
+  Console: 'use the Map (left trigger) to open the big map, use it again to close it, and crouch while using it to zoom out',
+  Mobile: 'use the Map to open the big map, use it again to close it, and crouch while using it to zoom out'
+};
+const USE = { Desktop: 'right-click to close, crouch + right-click to zoom out', Console: 'use again to close, crouch + use to zoom out', Mobile: 'use again to close, crouch + use to zoom out' };
 
-// Everyone gets one Map item, once, in the last hotbar slot when it is free: pressing 9 (or the bumpers on a
-// console) then shows the big map (add-ons cannot bind other keys). It can also be crafted from a compass and paper.
+// Everyone gets one Map item, once, in the last hotbar slot when it is free. Using it shows the big map (add-ons
+// cannot bind keys), so picking it in the hotbar shows nothing on its own. It can also be crafted from a compass and
+// paper.
 function giveMap(p) {
   try {
     if (p.getDynamicProperty('bmlive:gave_map')) return;
@@ -634,7 +838,7 @@ function giveMap(p) {
     else if (inv.emptySlotsCount > 0) inv.addItem(new ItemStack(MAP_ITEM, 1));
     else return;
     p.setDynamicProperty('bmlive:gave_map', true);
-    p.sendMessage('§eBedrock Map Live:§r hold the Map to see the big map, ' + (USE[platformOf(p)] || USE.Desktop) + '.' + where + ' Typing /map and /minimap in chat works too.');
+    p.sendMessage('§eBedrock Map Live:§r ' + (GUIDE[platformOf(p)] || GUIDE.Desktop) + '.' + where + ' Typing /map and /minimap in chat works too.');
   } catch {}
 }
 
@@ -676,9 +880,9 @@ on(after.playerBreakBlock, e => changed(e.block.dimension, e.block.location));
 on(after.playerPlaceBlock, e => changed(e.block.dimension, e.block.location));
 on(after.blockExplode, e => changed(e.dimension, e.block.location));
 on(after.pistonActivate, e => changed(e.dimension, e.block.location));
-// Using the Map (right click, the left trigger, or a tap) changes the big map's zoom.
+// Using the Map (right click, the left trigger, or a tap) opens or closes the big map, or zooms out while crouching.
 on(after.itemUse, e => {
-  if (e.itemStack && e.itemStack.typeId === MAP_ITEM && e.source && e.source.typeId === 'minecraft:player') system.run(() => { zoomOut(e.source); drawMaps(); });
+  if (e.itemStack && e.itemStack.typeId === MAP_ITEM && e.source && e.source.typeId === 'minecraft:player') system.run(() => { useMap(e.source); drawMaps(); });
 });
 on(after.playerSpawn, e => { if (e.initialSpawn) system.runTimeout(() => giveMap(e.player), 40); });
 on(after.entityDie, e => {

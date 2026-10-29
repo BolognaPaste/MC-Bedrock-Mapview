@@ -4,8 +4,11 @@
   // The behavior pack sends both maps as one title: the title is "bm:m:" + the minimap (or "bm:x" without one) and
   // the subtitle "bm:f:" + the big map. Each map square is one character of the pack's font pages, one line per
   // row, and each map ends with "§#§" + the direction the player faces (0 = north ... 7 = north-west), which picks
-  // the arrow drawn over the middle of the map. Titles like that are not shown in the middle of the screen; the two
-  // panels below show them instead.
+  // the arrow drawn over the middle of the map. Between "bm:m:" and the minimap come the player's status effects, a
+  // line each, in a block always 600 bytes long (padded with "§r", which is not drawn), so ('%.605s' * text) is
+  // "bm:m:" + the effects and the rest the minimap: format lengths in JSON UI count bytes. (Cutting after the 12 KB
+  // minimap instead, with the effects at the end, showed no effects in game.) Titles like that are not shown in the
+  // middle of the screen; the panels below show them instead.
   "hud_title_text": {
     "bindings": [
       { "binding_name": "#hud_title_text_string" },
@@ -23,6 +26,32 @@
         "array_name": "controls",
         "operation": "insert_back",
         "value": [ { "bm_minimap@hud.bm_minimap": {} }, { "bm_bigmap@hud.bm_bigmap": {} } ]
+      },
+      // The game's status effect icons (potions, beacons, conduits, omens...) draw in the top-right corner, under the
+      // minimap. While the minimap is up the effects are listed down its left side instead (bm_effects below), so
+      // this copy, otherwise the game's own (same size, place and setting), only shows while the minimap is off.
+      {
+        "control_name": "mob_effects_renderer",
+        "operation": "replace",
+        "value": [
+          {
+            "mob_effects_renderer@hud.mob_effects_renderer": {
+              "size": [ "100%", "75%" ],
+              "offset": [ 0, 24 ],
+              "anchor_from": "center",
+              "anchor_to": "center",
+              "bindings": [
+                { "binding_name": "#status_effects_visible", "binding_name_override": "#bm_effects_on" },
+                { "binding_name": "#hud_title_text_string" },
+                {
+                  "binding_type": "view",
+                  "source_property_name": "(#bm_effects_on and ((#hud_title_text_string - 'bm:m:') = #hud_title_text_string))",
+                  "target_property_name": "#visible"
+                }
+              ]
+            }
+          }
+        ]
       }
     ]
   },
@@ -50,36 +79,124 @@
     "layer": 10
   },
 
-  // Top-right corner: the minimap on a faint dark frame. The label is drawn twice, the second time shifted by a
+  // The status effects, a line each (a bottle of the effect's colour from font page E4, name and level, time left),
+  // on inventory grey with 5 units of border, hanging off the minimap's left side, tops level (see bm_effects_anchor).
+  // Shown while there is at least one: every line starts with "§f".
+  "bm_effects": {
+    "type": "image",
+    "texture": "textures/ui/dialog_background_opaque",
+    "anchor_from": "top_left",
+    "anchor_to": "top_right",
+    "offset": [ -2, 0 ],
+    "size": [ "100%c + 12px", "100%c + 10px" ],
+    "controls": [
+      {
+        "bm_effects_text": {
+          "type": "label",
+          "text": "#bm_fx",
+          "anchor_from": "center",
+          "anchor_to": "center",
+          "color": [ 1.0, 1.0, 1.0 ],
+          "shadow": false,
+          "localize": false,
+          "enable_profanity_filter": false,
+          "layer": 1,
+          "bindings": [
+            { "binding_name": "#hud_title_text_string" },
+            {
+              "binding_type": "view",
+              "source_property_name": "(('%.605s' * #hud_title_text_string) - 'bm:m:')",
+              "target_property_name": "#bm_fx"
+            }
+          ]
+        }
+      }
+    ],
+    "bindings": [
+      { "binding_name": "#hud_title_text_string" },
+      {
+        "binding_type": "view",
+        "source_property_name": "(not ((('%.605s' * #hud_title_text_string) - '§f') = ('%.605s' * #hud_title_text_string)))",
+        "target_property_name": "#visible"
+      }
+    ]
+  },
+
+  // Top-right corner: the minimap, framed like the game's inventory: the map on black (1.5 units round it), sunk in
+  // an item slot (cell_image, 1 unit), in an inventory window (dialog_background_opaque, 5 units: the 3-unit bevel and
+  // 2 of grey). A resource pack that re-themes the inventory re-themes it too. Each layer is its child plus a border,
+  // so the frame fits whatever size the game draws the text. The label is drawn twice, the second time shifted by a
   // fraction of a square, which fills the hairline gaps the game leaves between characters.
   "bm_minimap": {
     "type": "image",
-    "texture": "textures/ui/Black",
-    "alpha": 0.55,
+    "texture": "textures/ui/dialog_background_opaque",
     "anchor_from": "top_right",
     "anchor_to": "top_right",
-    "offset": [ -3, 3 ],
-    "size": [ "100%c + 3px", "100%c + 3px" ],
+    "offset": [ -2, 2 ],
+    "size": [ "100%c + 10px", "100%c + 10px" ],
     "layer": 40,
+    "bindings": [
+      { "binding_name": "#hud_title_text_string" },
+      {
+        "binding_type": "view",
+        "source_property_name": "(not ((#hud_title_text_string - 'bm:m:') = #hud_title_text_string))",
+        "target_property_name": "#visible"
+      }
+    ],
     "controls": [
       {
-        "bm_minimap_text@hud.bm_map_label": {
-          "text": "#bm_text",
-          "font_scale_factor": 0.17,
-          "bindings": [
-            { "binding_name": "#hud_title_text_string" },
-            { "binding_type": "view", "source_property_name": "(#hud_title_text_string - 'bm:m:')", "target_property_name": "#bm_text" }
-          ],
+        // The effect list hangs off this point, the frame's top-left corner. Being 0 x 0 it leaves the frame's size
+        // (taken from its children) alone, and the list is its child, so the list's own size never reaches the frame.
+        "bm_effects_anchor": {
+          "type": "panel",
+          "anchor_from": "top_left",
+          "anchor_to": "top_left",
+          "size": [ 0, 0 ],
+          "controls": [ { "bm_effects@hud.bm_effects": {} } ]
+        }
+      },
+      {
+        "bm_minimap_slot": {
+          "type": "image",
+          "texture": "textures/ui/cell_image",
+          "anchor_from": "center",
+          "anchor_to": "center",
+          "size": [ "100%c + 2px", "100%c + 2px" ],
+          "layer": 1,
           "controls": [
             {
-              "bm_minimap_fill@hud.bm_map_label": {
-                "text": "#bm_text",
-                "font_scale_factor": 0.17,
-                "offset": [ 0.35, 0.25 ],
-                "bindings": [
-            { "binding_name": "#hud_title_text_string" },
-            { "binding_type": "view", "source_property_name": "(#hud_title_text_string - 'bm:m:')", "target_property_name": "#bm_text" }
-          ]
+              "bm_minimap_back": {
+                "type": "image",
+                "texture": "textures/ui/Black",
+                "anchor_from": "center",
+                "anchor_to": "center",
+                "size": [ "100%c + 3px", "100%c + 3px" ],
+                "layer": 1,
+                "controls": [
+                  {
+                    "bm_minimap_text@hud.bm_map_label": {
+                      "text": "#bm_text",
+                      "font_scale_factor": 0.17,
+                      "bindings": [
+                        { "binding_name": "#hud_title_text_string" },
+                        { "binding_type": "view", "source_property_name": "(#hud_title_text_string - ('%.605s' * #hud_title_text_string))", "target_property_name": "#bm_text" }
+                      ],
+                      "controls": [
+                        {
+                          "bm_minimap_fill@hud.bm_map_label": {
+                            "text": "#bm_text",
+                            "font_scale_factor": 0.17,
+                            "offset": [ 0.35, 0.25 ],
+                            "bindings": [
+                              { "binding_name": "#hud_title_text_string" },
+                              { "binding_type": "view", "source_property_name": "(#hud_title_text_string - ('%.605s' * #hud_title_text_string))", "target_property_name": "#bm_text" }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
               }
             }
           ]
@@ -93,14 +210,6 @@
       { "bm_mini_arrow_5@hud.bm_mini_arrow": { "texture": "textures/bmlive/arrow_5", "$mark": "§#§5" } },
       { "bm_mini_arrow_6@hud.bm_mini_arrow": { "texture": "textures/bmlive/arrow_6", "$mark": "§#§6" } },
       { "bm_mini_arrow_7@hud.bm_mini_arrow": { "texture": "textures/bmlive/arrow_7", "$mark": "§#§7" } }
-    ],
-    "bindings": [
-      { "binding_name": "#hud_title_text_string" },
-      {
-        "binding_type": "view",
-        "source_property_name": "(not ((#hud_title_text_string - 'bm:m:') = #hud_title_text_string))",
-        "target_property_name": "#visible"
-      }
     ]
   },
 

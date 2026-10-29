@@ -4,7 +4,7 @@
     "name": "Bedrock Map Live (map)",
     "description": "The minimap and map colours for Bedrock Map Live. Added automatically with the behavior pack.",
     "uuid": "d8dac572-fc8c-444c-89f1-abba6584cf0b",
-    "version": [1, 5, 0],
+    "version": [1, 5, 6],
     "min_engine_version": [1, 21, 90]
   },
   "modules": [
@@ -12,7 +12,7 @@
       "description": "Minimap HUD element and map colour glyphs",
       "type": "resources",
       "uuid": "bfe093c5-3f00-47ee-b321-c8875f909057",
-      "version": [1, 5, 0]
+      "version": [1, 5, 6]
     }
   ],
   "metadata": {

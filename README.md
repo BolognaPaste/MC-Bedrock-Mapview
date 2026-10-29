@@ -48,10 +48,13 @@ solid, and blocks are flat colours (no textures). `viewer/map3d.js` holds the re
 ## In-game map
 
 `Bedrock Map Live.mcaddon` (Live link tab, "Install in Minecraft") works without the app: activate it on a world
-and everyone gets a minimap in the top-right corner (`/minimap` shows or hides it) and a big map while holding the
-Map item (given once, in hotbar slot 9 when free, so pressing `9` shows it; using it changes the zoom; craftable
-from a compass and paper) or after `/map`. Bedrock add-ons cannot bind keys (scripts only see jump, sneak and
-movement), so there is no `M` shortcut. Maps are one block per square (minimap 64 x 64, big map 256 x 144), drawn
+and everyone gets a minimap in the top-right corner, framed like the inventory, with their status effects listed down
+its left side (name, level and time left; `/minimap` shows or hides it, and without it the game's own effect icons are
+back in their usual place), and a big map when they use the Map item (given once, in hotbar slot 9 when free; use it
+again or switch away to close the map, crouch while using it to zoom out; craftable from a compass and paper) or
+after `/map`. Just scrolling past the item shows nothing. Bedrock add-ons cannot bind keys (scripts only see jump,
+sneak and movement), and the inventory screen cannot hold a map tab (it only knows items and recipes, and a press
+there never reaches a script), so there is no `M` shortcut. Maps are one block per square (minimap 64 x 64, big map 256 x 144), drawn
 with font glyphs from the resource pack (256 colours picked for terrain, all on one font page: rows that switch
 pages drift sideways in game; `src-tauri/src/map_palette.rs`), with hill shading worked out from the saved heights. Everything anyone has
 explored is saved in the world (every 10 s, when a player leaves and when the world closes), so the map keeps places

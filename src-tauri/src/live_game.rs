@@ -168,6 +168,8 @@ pub fn pack_script() -> String {
     for (marker, table) in [("/*BM:EXACT*/", EXACT), ("/*BM:LEAVES*/", LEAVES), ("/*BM:DYES*/", DYES), ("/*BM:WOODS*/", WOODS)] {
         s = fill(&s, marker, &table_json(table));
     }
+    let effects: Vec<Value> = EFFECTS.iter().map(|(id, name, _, harmful)| json!([id, name, *harmful as u8])).collect();
+    s = fill(&s, "/*BM:EFFECTS*/", &Value::Array(effects).to_string());
     fill(&s, "/*BM:PALETTE*/", &crate::map_palette::script_json())
 }
 
@@ -230,6 +232,99 @@ pub fn arrow_texture(d: usize) -> Vec<u8> {
     png_bytes(32, 32, &px)
 }
 
+/// The status effects the pack lists down the minimap's left side: the game's id, the name shown, the potion colour,
+/// and whether it is harmful (its name is red). Effect i's icon is character U+E400 + i, a bottle of its colour on
+/// font page E4; the cell after the last is a grey bottle for effects missing here.
+pub const EFFECTS: &[(&str, &str, u32, bool)] = &[
+    ("speed", "Speed", 0x33ebff, false),
+    ("slowness", "Slowness", 0x8bafe0, true),
+    ("haste", "Haste", 0xd9c043, false),
+    ("mining_fatigue", "Mining Fatigue", 0x4a4217, true),
+    ("strength", "Strength", 0xffc700, false),
+    ("instant_health", "Instant Health", 0xf82423, false),
+    ("instant_damage", "Instant Damage", 0xa9656a, true),
+    ("jump_boost", "Jump Boost", 0xfdff84, false),
+    ("nausea", "Nausea", 0x551d4a, true),
+    ("regeneration", "Regeneration", 0xcd5cab, false),
+    ("resistance", "Resistance", 0x9146f0, false),
+    ("fire_resistance", "Fire Resistance", 0xff9900, false),
+    ("water_breathing", "Water Breathing", 0x98dac0, false),
+    ("invisibility", "Invisibility", 0xf6f6f6, false),
+    ("blindness", "Blindness", 0x1f1f23, true),
+    ("night_vision", "Night Vision", 0xc2ff66, false),
+    ("hunger", "Hunger", 0x587653, true),
+    ("weakness", "Weakness", 0x484d48, true),
+    ("poison", "Poison", 0x87a363, true),
+    ("fatal_poison", "Fatal Poison", 0x4e9331, true),
+    ("wither", "Wither", 0x736156, true),
+    ("health_boost", "Health Boost", 0xf87d23, false),
+    ("absorption", "Absorption", 0x2552a5, false),
+    ("saturation", "Saturation", 0xf82423, false),
+    ("levitation", "Levitation", 0xceffff, true),
+    ("slow_falling", "Slow Falling", 0xf3cfb9, false),
+    ("conduit_power", "Conduit Power", 0x1dc2d1, false),
+    ("bad_omen", "Bad Omen", 0x0b6138, false),
+    ("village_hero", "Hero of the Village", 0x44ff44, false),
+    ("darkness", "Darkness", 0x292721, true),
+    ("trial_omen", "Trial Omen", 0x16a6a6, false),
+    ("raid_omen", "Raid Omen", 0xde4058, false),
+    ("wind_charged", "Wind Charged", 0xbdc9ff, true),
+    ("weaving", "Weaving", 0x78695a, true),
+    ("oozing", "Oozing", 0x99ffa3, true),
+    ("infested", "Infested", 0x8c9b8c, true),
+];
+
+/// The colour of an effect not in EFFECTS.
+const OTHER_EFFECT: u32 = 0x8a8a8a;
+
+/// A 16 x 16 potion bottle: O outline, c cork, G glass, L the potion, D its shadow, H a highlight.
+const BOTTLE: [&str; 16] = [
+    "................",
+    "......OOOO......",
+    "......OccO......",
+    "......OccO......",
+    ".....OOOOOO.....",
+    "......OGGO......",
+    ".....OGGGGO.....",
+    "....OGGGGGGO....",
+    "...OLLLLLLLLO...",
+    "..OLHHLLLLLLLO..",
+    "..OLHLLLLLLLLO..",
+    "..OLLLLLLLLLLO..",
+    "..OLLLLLLLLLDO..",
+    "...OLLLLLLLDO...",
+    "....OOOOOOOO....",
+    "................",
+];
+
+/// Font page E4: the effect icons, a bottle of each effect's colour in cell order, then the grey one. The rest of
+/// the page is empty.
+pub fn effect_icon_page() -> Vec<u8> {
+    let mut px = vec![0u8; 256 * 256 * 4];
+    let colours = EFFECTS.iter().map(|e| e.2).chain([OTHER_EFFECT]);
+    for (cell, rgb) in colours.enumerate() {
+        let l = [(rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8];
+        let mix = |c: [u8; 3], f: f64, to: f64| c.map(|v| (v as f64 * f + to * (1.0 - f)).round() as u8);
+        let (row, col) = (cell / 16, cell % 16);
+        for (y, line) in BOTTLE.iter().enumerate() {
+            for (x, ch) in line.bytes().enumerate() {
+                let rgb = match ch {
+                    b'O' => [36, 30, 38],
+                    b'c' => [150, 102, 58],
+                    b'G' => [214, 230, 236],
+                    b'L' => l,
+                    b'D' => mix(l, 0.7, 0.0),
+                    b'H' => mix(l, 0.4, 255.0),
+                    _ => continue,
+                };
+                let o = ((row * 16 + y) * 256 + col * 16 + x) * 4;
+                px[o..o + 4].copy_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
+            }
+        }
+    }
+    png_bytes(256, 256, &px)
+}
+
 /// The Map item's 16 x 16 icon: a folded paper map with land, water and a red marker.
 pub fn map_icon() -> Vec<u8> {
     let mut px = vec![0u8; 16 * 16 * 4];
@@ -285,6 +380,7 @@ pub fn build_pack() -> Result<Vec<u8>, String> {
         ("Bedrock Map Live RP/ui/hud_screen.json".into(), RP_HUD.as_bytes().to_vec()),
         ("Bedrock Map Live RP/textures/item_texture.json".into(), RP_ITEM_TEXTURES.as_bytes().to_vec()),
         ("Bedrock Map Live RP/textures/items/bmlive_map.png".into(), map_icon()),
+        ("Bedrock Map Live RP/font/glyph_E4.png".into(), effect_icon_page()),
         ("Bedrock Map Live RP/pack_icon.png".into(), ICON.to_vec()),
     ];
     for page in 0..GLYPH_PAGES {
@@ -495,6 +591,7 @@ mod tests {
             "Bedrock Map Live RP/font/glyph_E3.png",
             "Bedrock Map Live RP/textures/bmlive/arrow_0.png",
             "Bedrock Map Live RP/textures/bmlive/arrow_7.png",
+            "Bedrock Map Live RP/font/glyph_E4.png",
         ] {
             assert!(z.by_name(f).is_ok(), "{} missing", f);
         }
@@ -545,6 +642,100 @@ mod tests {
         assert_eq!(north[3], 0, "transparent corner");
     }
 
+
+    /// hud_screen.json without its // comments (the game allows them, serde_json does not).
+    fn hud_json() -> Value {
+        let mut out = String::new();
+        let mut in_str = false;
+        let mut chars = RP_HUD.chars().peekable();
+        while let Some(c) = chars.next() {
+            if in_str {
+                if c == '\\' {
+                    out.push(c);
+                    out.extend(chars.next());
+                    continue;
+                }
+                in_str = c != '"';
+            } else if c == '"' {
+                in_str = true;
+            } else if c == '/' && chars.peek() == Some(&'/') {
+                while chars.peek().map_or(false, |n| *n != '\n') {
+                    chars.next();
+                }
+                continue;
+            }
+            out.push(c);
+        }
+        serde_json::from_str(&out).expect("hud_screen.json is valid JSON once comments are removed")
+    }
+
+    /// Every value of `key` anywhere in `v`, and every object key, depth first.
+    fn walk<'a>(v: &'a Value, key: &str, values: &mut Vec<&'a Value>, names: &mut Vec<&'a str>) {
+        match v {
+            Value::Object(m) => {
+                for (k, x) in m {
+                    names.push(k);
+                    if k == key {
+                        values.push(x);
+                    }
+                    walk(x, key, values, names);
+                }
+            }
+            Value::Array(a) => a.iter().for_each(|x| walk(x, key, values, names)),
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn hud_splits_the_title_where_the_script_puts_the_effects() {
+        let hud = hud_json();
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(build_pack().unwrap())).unwrap();
+        let (mut textures, mut names) = (Vec::new(), Vec::new());
+        walk(&hud, "texture", &mut textures, &mut names);
+        for t in textures.iter().filter_map(|t| t.as_str()).filter(|t| t.starts_with("textures/bmlive/")) {
+            assert!(z.by_name(&format!("Bedrock Map Live RP/{}.png", t)).is_ok(), "{} is not in the pack", t);
+        }
+        // The minimap title is "bm:m:", the effect block (FX_BYTES bytes in UTF-8), then the map and its direction
+        // mark. The HUD cuts it after "bm:m:" + the block; format lengths in JSON UI are bytes.
+        let fx: usize = SCRIPT.split("const FX_BYTES = ").nth(1).and_then(|s| s.split(';').next()).and_then(|n| n.trim().parse().ok()).expect("FX_BYTES in main.js");
+        assert_eq!(fx % 3, 0, "an empty block is all \"§r\", 3 bytes each");
+        let cut = format!("('%.{}s' * #hud_title_text_string)", "bm:m:".len() + fx);
+        let (mut exprs, mut _n) = (Vec::new(), Vec::new());
+        walk(&hud, "source_property_name", &mut exprs, &mut _n);
+        let exprs: Vec<&str> = exprs.iter().filter_map(|e| e.as_str()).collect();
+        let maps = exprs.iter().filter(|e| **e == format!("(#hud_title_text_string - {})", cut)).count();
+        assert_eq!(maps, 2, "both minimap labels show what follows the block ({})", cut);
+        assert!(exprs.contains(&format!("({} - 'bm:m:')", cut).as_str()), "the effect list shows the block");
+        assert!(exprs.iter().any(|e| e.starts_with("(not ((") && e.contains(&format!("{} - '§f')", cut))), "the list shows while the block has a line");
+        assert_eq!(exprs.iter().filter(|e| e.contains("%.")).count(), exprs.iter().filter(|e| e.contains(&cut)).count(), "every cut is at the same place");
+        // the list hangs off the minimap; the game's own effect icons only show while there is no minimap
+        assert!(names.iter().any(|n| n.starts_with("bm_effects@hud.bm_effects")));
+        assert!(!RP_HUD.contains("stack_panel"));
+        let swap = hud["root_panel"]["modifications"].as_array().unwrap().iter().find(|m| m["control_name"] == "mob_effects_renderer" && m["operation"] == "replace").expect("the game's effect icons are replaced");
+        let own = &swap["value"][0]["mob_effects_renderer@hud.mob_effects_renderer"];
+        assert!(own["bindings"].as_array().unwrap().iter().any(|b| b["target_property_name"] == "#visible" && b["source_property_name"].as_str().unwrap().contains("'bm:m:'")));
+    }
+
+    #[test]
+    fn effect_icons_are_bottles_of_each_colour() {
+        let mut r = png::Decoder::new(std::io::Cursor::new(effect_icon_page())).read_info().unwrap();
+        let mut px = vec![0u8; r.output_buffer_size()];
+        r.next_frame(&mut px).unwrap();
+        let at = |cell: usize, x: usize, y: usize| {
+            let o = (((cell / 16) * 16 + y) * 256 + (cell % 16) * 16 + x) * 4;
+            [px[o], px[o + 1], px[o + 2], px[o + 3]]
+        };
+        for (i, e) in EFFECTS.iter().enumerate() {
+            assert_eq!(at(i, 7, 11), [(e.2 >> 16) as u8, (e.2 >> 8) as u8, e.2 as u8, 255], "{} bottle", e.0);
+            assert_eq!(at(i, 0, 0)[3], 0, "transparent around the bottle");
+        }
+        assert_eq!(at(EFFECTS.len(), 7, 11), [0x8a, 0x8a, 0x8a, 255], "the grey bottle for other effects");
+        assert_eq!(at(EFFECTS.len() + 1, 7, 11)[3], 0, "nothing after it");
+        assert!(EFFECTS.len() < 255);
+        // the script gets the names and which are harmful
+        let s = pack_script();
+        assert!(s.contains(r#"["village_hero","Hero of the Village",0]"#) && s.contains(r#"["poison","Poison",1]"#));
+    }
 
     #[test]
     fn pack_script_gets_the_colour_tables() {
