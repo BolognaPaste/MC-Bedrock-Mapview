@@ -327,3 +327,123 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;tr
 .scope{isolation:isolate}
 .world{contain:layout paint}
 .telemetry dd{text-shadow:none}
+
+/* ---- skeuomorphic hardware: the console as a physical object, same Halloween colours. The rail is stitched
+   leather, cards and forms are metal plates screwed on, buttons are keys that press in, switches slide, status
+   dots are LEDs, and the readouts sit behind glass. Textures are gradients plus two small inline SVGs (a screw and
+   leather grain), painted once and never animated. ---- */
+:root{
+  --edge:#07030a;
+  --screw:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.3' r='.8'%3E%3Cstop offset='0' stop-color='%23f1e4f6'/%3E%3Cstop offset='.5' stop-color='%23998aa2'/%3E%3Cstop offset='1' stop-color='%23382c3f'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5' cy='5' r='4.6' fill='%2305020a'/%3E%3Ccircle cx='5' cy='5' r='3.9' fill='url(%23g)'/%3E%3Cpath d='M2.7 7.3 7.3 2.7' stroke='%23231a29' stroke-width='1.2' stroke-linecap='round'/%3E%3Cpath d='M3.1 7.7 7.7 3.1' stroke='%23fff' stroke-opacity='.35' stroke-width='.5'/%3E%3C/svg%3E");
+  --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.6 1.5'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+  --screws:var(--screw) left 7px top 7px/9px 9px no-repeat,var(--screw) right 7px top 7px/9px 9px no-repeat,var(--screw) left 7px bottom 7px/9px 9px no-repeat,var(--screw) right 7px bottom 7px/9px 9px no-repeat;
+  --plate:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,0) 38%,rgba(0,0,0,.2)),repeating-linear-gradient(90deg,rgba(255,255,255,.02) 0 1px,transparent 1px 3px),linear-gradient(135deg,#2d1d34,#1b1022);
+  --plate-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 -1px 0 rgba(0,0,0,.55),0 1px 0 rgba(0,0,0,.9),0 14px 28px -12px rgba(0,0,0,.9);
+  --well:inset 0 2px 5px rgba(0,0,0,.85),inset 0 0 0 1px rgba(0,0,0,.5),0 1px 0 rgba(255,255,255,.08);
+  --key:linear-gradient(180deg,#45334f,#2b1e33 55%,#231829);
+  --key-hi:linear-gradient(180deg,#533f5f,#33243c 55%,#2a1d31);
+  --key-in:linear-gradient(180deg,#1b1120,#291c30);
+  --key-up:inset 0 1px 0 rgba(255,255,255,.17),inset 0 -2px 0 rgba(0,0,0,.25),0 2px 0 var(--edge),0 4px 9px -3px rgba(0,0,0,.8);
+  --key-down:inset 0 2px 6px rgba(0,0,0,.75),inset 0 0 0 1px rgba(0,0,0,.35),0 1px 0 rgba(255,255,255,.06);
+  --knob:radial-gradient(circle at 35% 30%,#fff 0,#e6d9ec 22%,#9d8da6 62%,#5b4c63 100%);
+  --knob-shadow:0 1px 2px rgba(0,0,0,.85),0 0 0 1px rgba(0,0,0,.45);
+}
+
+/* leather rail with a stitched edge, its title stamped in copper foil */
+.rail{border-right:1px solid #000;outline:2px dashed rgba(255,166,92,.42);outline-offset:-10px;
+  background:var(--grain) 0 0/180px 180px,radial-gradient(160% 50% at 0 0,rgba(255,200,150,.06),transparent 60%),linear-gradient(180deg,#2b1531,#1c0d21 60%,#170a1b);
+  box-shadow:inset -1px 0 0 rgba(255,255,255,.07),inset -16px 0 24px -16px rgba(0,0,0,.85),8px 0 22px -8px rgba(0,0,0,.8)}
+h1{color:transparent;background:linear-gradient(180deg,#ffe6c2 0%,#ffb366 38%,#d0660f 60%,#ffcf94 100%);-webkit-background-clip:text;background-clip:text;text-shadow:none;
+  filter:drop-shadow(0 -1px 0 rgba(0,0,0,.8)) drop-shadow(0 1px 0 rgba(255,214,170,.18))}
+.brand p{text-shadow:0 -1px 0 rgba(0,0,0,.7)}
+.world h3,.lhead h3,.proto summary,.add h2{text-shadow:0 -1px 0 rgba(0,0,0,.85),0 1px 0 rgba(255,255,255,.09)}
+
+/* status readout: a green-glass display in a bezel, with scanlines and a glare */
+.telemetry{border:1px solid #000;border-radius:6px;
+  background:radial-gradient(140% 100% at 20% 0,rgba(184,245,90,.09),transparent 60%),linear-gradient(180deg,#0c1409,#060a04);
+  box-shadow:inset 0 3px 12px rgba(0,0,0,.95),0 0 0 4px #2c1f33,0 0 0 5px var(--edge),0 1px 0 5px rgba(255,255,255,.09),0 10px 22px -8px rgba(0,0,0,.9)}
+.telemetry::before{inset:0;border-radius:inherit;background:linear-gradient(165deg,rgba(255,255,255,.08),rgba(255,255,255,0) 38%),repeating-linear-gradient(180deg,rgba(0,0,0,.22) 0 1px,transparent 1px 3px)}
+.telemetry>div+div{border-top-color:rgba(184,245,90,.09)}
+.telemetry dt{color:#83a266}
+.telemetry dd{font:13.5px/1.5 var(--mono)}
+
+/* screwed-on metal plates */
+.world,.lpanel,.panel.empty,.add form{border:1px solid var(--edge);border-radius:10px;background:var(--plate);box-shadow:var(--plate-shadow)}
+.add form{padding:20px 18px 18px}
+.world::before,.lpanel::before,.panel::before,.add form::before{inset:0;border-radius:inherit;background:var(--screws)}
+.world:hover{border-color:var(--edge);box-shadow:inset 0 1px 0 rgba(255,255,255,.16),inset 0 -1px 0 rgba(0,0,0,.55),0 1px 0 rgba(0,0,0,.9),0 22px 36px -14px rgba(0,0,0,.95),0 0 0 1px rgba(255,140,42,.2)}
+.world.busy{border-color:var(--edge);box-shadow:var(--plate-shadow),0 0 0 1px rgba(255,194,71,.55),0 0 24px -6px rgba(255,194,71,.45)}
+
+/* recessed wells: fields, the "where it looks" pocket, plugin rows, the activity log */
+input[type=text],.sess select{border:1px solid var(--edge);border-radius:6px;background:linear-gradient(180deg,#09040c,#130a18);box-shadow:var(--well)}
+input[type=text]:focus,.sess select:focus{border-color:var(--edge);box-shadow:var(--well),0 0 0 2px rgba(255,140,42,.6),0 0 14px -2px rgba(255,140,42,.55)}
+.where{border:1px solid var(--edge);border-radius:8px;background:rgba(0,0,0,.28);box-shadow:var(--well)}
+.sess{border:1px solid var(--edge);border-radius:8px;background:rgba(0,0,0,.26);box-shadow:var(--well)}
+.log{padding:8px 10px;border-radius:7px;background:linear-gradient(180deg,#060309,#0d0711);box-shadow:var(--well)}
+@media (max-width:900px){.where{margin:0 18px}}
+
+/* keys: raised, pressed in while held, latched in while on (aria-pressed) */
+button,a.btn{border:1px solid var(--edge);border-radius:7px;background:var(--key);text-shadow:0 -1px 0 rgba(0,0,0,.7);box-shadow:var(--key-up);transition:transform .07s,box-shadow .07s,background .12s,color .12s}
+button:hover,a.btn:hover{border-color:var(--edge);background:var(--key-hi);box-shadow:var(--key-up),0 0 16px -6px var(--uv)}
+button:active:not(:disabled),a.btn:active,button[aria-pressed=true]{transform:translateY(2px);background:var(--key-in);box-shadow:var(--key-down)}
+button[aria-pressed=true]{border-color:var(--edge);color:var(--uv)}
+button:disabled{box-shadow:var(--key-up)}
+button[hidden],a.btn[hidden]{display:none} /* the display above would otherwise show hidden buttons */
+button.solid,button.primary,a.primary{color:#2b0f00;border-color:#6a2900;text-shadow:0 1px 0 rgba(255,228,196,.5);
+  background:linear-gradient(180deg,#ffcb8f 0%,#ffa04a 46%,#f27b14 54%,#ff9a3a 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.7),inset 0 -2px 3px rgba(130,45,0,.35),0 2px 0 #6a2900,0 6px 14px -4px rgba(255,120,20,.6)}
+button.solid:hover,button.primary:hover,a.primary:hover{background:linear-gradient(180deg,#ffd9a8 0%,#ffb066 46%,#ff8a24 54%,#ffaa52 100%)}
+button.solid:active:not(:disabled),button.primary:active:not(:disabled),a.primary:active{background:linear-gradient(180deg,#e9801f,#ffa04a);box-shadow:inset 0 2px 6px rgba(110,40,0,.75),0 0 0 #6a2900}
+button.mini{border-color:var(--edge);border-radius:5px;box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 1px 0 var(--edge),0 3px 6px -2px rgba(0,0,0,.7)}
+button.mini:active:not(:disabled),button.mini[aria-pressed=true]{transform:translateY(1px);box-shadow:var(--key-down)}
+.dimchip{border-color:var(--edge)}
+.dimchip[aria-pressed=true]{border-color:var(--edge);color:var(--dim);box-shadow:var(--key-down),inset 0 -2px 0 rgba(184,245,90,.55)}
+.tab{border-color:var(--edge);border-radius:10px;background:var(--key)}
+.tab:hover{background:var(--key-hi)}
+.tab[aria-pressed=true]{border-color:var(--edge);background:linear-gradient(180deg,#1a0e1e,#291930);box-shadow:var(--key-down),inset 3px 0 0 var(--uv),inset 0 0 18px -6px rgba(255,140,42,.5)}
+
+/* slider switches and the cave-layer checkbox */
+.sw i{flex:none;width:42px;height:22px;border:1px solid var(--edge);border-radius:999px;background:linear-gradient(180deg,#08040b,#1a1020);box-shadow:var(--well);transition:background .15s,box-shadow .15s}
+.sw i::after{top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--knob);box-shadow:var(--knob-shadow)}
+.sw input:checked+i{border-color:var(--edge);background:linear-gradient(180deg,#a84600,#ff8c2a);box-shadow:inset 0 2px 5px rgba(70,20,0,.85),0 1px 0 rgba(255,255,255,.08),0 0 14px -3px rgba(255,140,42,.8)}
+.sw input:checked+i::after{transform:translateX(20px);background:var(--knob);box-shadow:var(--knob-shadow)}
+.opt.chk input{appearance:none;flex:none;display:grid;place-items:center;width:18px;height:18px;margin:0;border:1px solid var(--edge);border-radius:4px;background:linear-gradient(180deg,#09040c,#150b1a);box-shadow:var(--well);cursor:pointer}
+.opt.chk input:checked{background:linear-gradient(180deg,#ffb466,#f07a12);box-shadow:inset 0 1px 0 rgba(255,255,255,.5),inset 0 -1px 2px rgba(110,40,0,.5),0 0 10px -2px rgba(255,140,42,.7)}
+.opt.chk input:checked::after{content:"";width:5px;height:9px;margin-top:-2px;border:solid #2b0f00;border-width:0 2px 2px 0;transform:rotate(45deg)}
+
+/* LEDs: a glass dome in a black bezel, lit with a glow */
+.dot{flex:none;width:11px;height:11px;opacity:1;background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.5) 0 1px,#4a3a52 2.5px,#1b1120 100%);box-shadow:0 0 0 2px var(--edge),0 0 0 3px rgba(255,255,255,.08)}
+.dot.on{--led:var(--ok)}.dot.live{--led:var(--data)}.dot.bad{--led:var(--alert)}
+.dot.on,.dot.live,.dot.bad{background:radial-gradient(circle at 35% 30%,#fff 0 1.2px,var(--led) 3px,color-mix(in srgb,var(--led),#000 45%) 100%);box-shadow:0 0 0 2px var(--edge),0 0 0 3px rgba(255,255,255,.08),0 0 10px var(--led)}
+.legend li::before{width:9px;height:9px;background:radial-gradient(circle at 35% 30%,#fff 0 1px,var(--c) 2.5px,color-mix(in srgb,var(--c),#000 45%));box-shadow:0 0 0 1.5px var(--edge),0 0 6px var(--c)}
+
+/* progress: a glass tube filling with slime */
+.meter{height:14px;border:1px solid var(--edge);border-radius:999px;background:linear-gradient(180deg,#060309,#130b17);box-shadow:var(--well)}
+.meter i{border-radius:inherit;background:linear-gradient(180deg,#e9ffb0,#b8f55a 40%,#6aa81e);box-shadow:0 0 10px rgba(184,245,90,.5)}
+.meter.done i{background:linear-gradient(180deg,#dcffd9,#8ff08a 40%,#3a9e35);box-shadow:0 0 10px rgba(143,240,138,.5)}
+.meter::after{border-radius:inherit;background:linear-gradient(180deg,rgba(255,255,255,.3),rgba(255,255,255,.08) 45%,transparent 55%,rgba(0,0,0,.15))}
+
+/* radar scope: a CRT behind curved glass in a turned-metal bezel (the bezel is extra, the screen stays 176 px) */
+.world{grid-template-columns:200px minmax(0,1fr)}
+.scope{width:192px;height:192px;border:8px solid transparent;
+  background:linear-gradient(#0b0510,#0b0510) padding-box,conic-gradient(from 200deg,#b9a9c1,#3a2d40 15%,#ddd0e3 30%,#3d3044 48%,#c3b3cb 66%,#30253a 82%,#b9a9c1) border-box;
+  box-shadow:0 0 0 1px var(--edge),0 8px 18px -6px rgba(0,0,0,.95),0 0 30px -10px rgba(255,140,42,.55)}
+.scope canvas{width:100%;height:100%}
+.scope::after{content:"";position:absolute;inset:0;border-radius:50%;pointer-events:none;
+  background:radial-gradient(ellipse 75% 45% at 38% 14%,rgba(255,255,255,.17),rgba(255,255,255,0) 70%),radial-gradient(circle,transparent 58%,rgba(0,0,0,.5));
+  box-shadow:inset 0 0 0 1px #000,inset 0 3px 10px rgba(0,0,0,.8)}
+
+/* labels: embossed label tape; counters: a black number wheel */
+.tag,.state,.pill,.steps .check{border:0;border-radius:3px;padding:1px 8px;font:600 11.5px/1.7 var(--mono);letter-spacing:.07em;text-transform:uppercase;color:#f3ebf6;
+  background:linear-gradient(180deg,#3e2e48,#21162a);text-shadow:0 1px 0 rgba(0,0,0,.9),0 -1px 0 rgba(255,255,255,.22);box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 1px 2px rgba(0,0,0,.75)}
+.state.on,.pill.live,.steps .check.ok{color:#eaffe4;background:linear-gradient(180deg,#36782f,#1d4a19)}
+.state.bad{color:#ffe6e0;background:linear-gradient(180deg,#962f20,#5d160c)}
+.pill.quiet,.steps .check.bad{color:#fff4d8;background:linear-gradient(180deg,#977014,#5c4207)}
+.steps .check:empty{display:none}
+.count{padding:0 6px;border-radius:3px;color:#f5f0e8;background:linear-gradient(180deg,#0b0b0b,#2a2a2a 48%,#0b0b0b 52%,#1d1d1d);box-shadow:inset 0 0 0 1px #000,0 1px 0 rgba(255,255,255,.09);text-shadow:0 1px 0 #000}
+
+/* the close-Minecraft tip is a note taped to the leather; errors are a red plate */
+.warn{position:relative;border:0;border-radius:2px 2px 6px 2px;padding:16px 14px 12px;color:#3b2410;background:linear-gradient(175deg,#ffe9ad,#f5cf78);transform:rotate(-1.1deg);
+  box-shadow:0 1px 1px rgba(0,0,0,.35),0 12px 18px -10px rgba(0,0,0,.85),inset 0 -12px 18px -14px rgba(120,70,0,.5)}
+.warn::before{content:"";position:absolute;top:-9px;left:50%;width:76px;height:20px;margin-left:-38px;background:linear-gradient(180deg,rgba(255,255,255,.42),rgba(255,255,255,.26));box-shadow:0 1px 2px rgba(0,0,0,.25);transform:rotate(1.6deg)}
+.err{border:1px solid #250604;border-radius:9px;background:linear-gradient(180deg,#5b1b14,#3b0e0a);color:#ffd9d2;box-shadow:inset 0 1px 0 rgba(255,255,255,.13),0 8px 16px -8px rgba(0,0,0,.85)}

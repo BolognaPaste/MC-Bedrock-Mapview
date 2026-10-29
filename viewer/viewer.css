@@ -200,3 +200,85 @@ button.mini:hover{color:var(--ink)}
 .ctxhead{padding:6px 12px;font:12.5px var(--mono,monospace);color:var(--dim);border-bottom:1px solid var(--line)}
 .ctxmenu button{border:0;text-align:left;padding:7px 12px;box-shadow:none}
 .ctxmenu button:hover,.ctxmenu button:focus-visible{background:rgba(255,255,255,.08);box-shadow:none;color:var(--acc)}
+
+/* ---- skeuomorphic hardware, as in the control panel: metal plates screwed on, keys that press in, slider
+   switches, an LED, readouts behind glass. The plates and keys take each dimension's tint (--deck, --acc). The
+   panels are solid now, so there is no backdrop blur to redraw while the map moves. ---- */
+:root{
+  --edge:#050207;
+  --screw:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.3' r='.8'%3E%3Cstop offset='0' stop-color='%23f1e4f6'/%3E%3Cstop offset='.5' stop-color='%23998aa2'/%3E%3Cstop offset='1' stop-color='%23382c3f'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5' cy='5' r='4.6' fill='%2305020a'/%3E%3Ccircle cx='5' cy='5' r='3.9' fill='url(%23g)'/%3E%3Cpath d='M2.7 7.3 7.3 2.7' stroke='%23231a29' stroke-width='1.2' stroke-linecap='round'/%3E%3Cpath d='M3.1 7.7 7.7 3.1' stroke='%23fff' stroke-opacity='.35' stroke-width='.5'/%3E%3C/svg%3E");
+  --plate:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,0) 38%,rgba(0,0,0,.22)),repeating-linear-gradient(90deg,rgba(255,255,255,.02) 0 1px,transparent 1px 3px),linear-gradient(135deg,color-mix(in srgb,var(--deck),#fff 11%),var(--deck));
+  --plate-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 -1px 0 rgba(0,0,0,.55),0 1px 0 rgba(0,0,0,.9),0 14px 28px -12px rgba(0,0,0,.9);
+  --well:inset 0 2px 5px rgba(0,0,0,.85),inset 0 0 0 1px rgba(0,0,0,.5),0 1px 0 rgba(255,255,255,.08);
+  --key:linear-gradient(180deg,color-mix(in srgb,var(--deck),#fff 20%),color-mix(in srgb,var(--deck),#fff 10%) 55%,color-mix(in srgb,var(--deck),#fff 7%));
+  --key-hi:linear-gradient(180deg,color-mix(in srgb,var(--deck),#fff 27%),color-mix(in srgb,var(--deck),#fff 14%) 55%,color-mix(in srgb,var(--deck),#fff 10%));
+  --key-in:linear-gradient(180deg,color-mix(in srgb,var(--deck),#000 25%),var(--deck));
+  --key-up:inset 0 1px 0 rgba(255,255,255,.17),inset 0 -2px 0 rgba(0,0,0,.25),0 2px 0 var(--edge),0 4px 9px -3px rgba(0,0,0,.8);
+  --key-down:inset 0 2px 6px rgba(0,0,0,.75),inset 0 0 0 1px rgba(0,0,0,.35),0 1px 0 rgba(255,255,255,.06);
+  --gloss:linear-gradient(180deg,color-mix(in srgb,var(--acc),#fff 45%) 0%,color-mix(in srgb,var(--acc),#fff 12%) 46%,color-mix(in srgb,var(--acc),#000 8%) 54%,var(--acc) 100%);
+  --gloss-edge:color-mix(in srgb,var(--acc),#000 60%);
+  --knob:radial-gradient(circle at 35% 30%,#fff 0,#e6d9ec 22%,#9d8da6 62%,#5b4c63 100%);
+  --knob-shadow:0 1px 2px rgba(0,0,0,.85),0 0 0 1px rgba(0,0,0,.45);
+  --tape:linear-gradient(180deg,#3e2e48,#21162a);
+}
+
+/* plates */
+.panel{border:1px solid var(--edge);border-radius:10px;background:var(--plate);box-shadow:var(--plate-shadow);backdrop-filter:none;-webkit-backdrop-filter:none}
+.brk::before{inset:0;border-radius:inherit;
+  background:var(--screw) left 6px top 6px/8px 8px no-repeat,var(--screw) right 6px top 6px/8px 8px no-repeat,var(--screw) left 6px bottom 6px/8px 8px no-repeat,var(--screw) right 6px bottom 6px/8px 8px no-repeat}
+.ident{padding:12px 18px}
+.nav{padding:11px 18px}
+.read{padding:12px 18px}
+.info{padding:14px 18px 16px}
+#msg{padding:18px 26px}
+h1,.info .ihead h2{text-shadow:0 -1px 0 rgba(0,0,0,.85),0 1px 0 rgba(255,255,255,.09)}
+.sep{width:2px;background:linear-gradient(90deg,rgba(0,0,0,.7) 50%,rgba(255,255,255,.08) 50%)}
+.hints{border:1px solid var(--edge);border-radius:7px;background:var(--plate);box-shadow:var(--plate-shadow);text-shadow:0 -1px 0 rgba(0,0,0,.7)}
+.ctxmenu{padding:4px;border:1px solid var(--edge);border-radius:9px;background:var(--plate);box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 14px 30px rgba(0,0,0,.7)}
+.ctxhead{border-bottom-color:rgba(0,0,0,.6);box-shadow:0 1px 0 rgba(255,255,255,.06)}
+
+/* the overview map sits behind glass in the plate, with no screws in the way */
+.overview{padding:8px}
+.overview::before{display:none}
+.overview::after{content:"";position:absolute;inset:8px;border-radius:3px;pointer-events:none;background:linear-gradient(160deg,rgba(255,255,255,.12),rgba(255,255,255,0) 40%);box-shadow:inset 0 0 0 1px #000,inset 0 2px 8px rgba(0,0,0,.7)}
+#mini{border-radius:3px}
+
+/* cursor readout: a display behind glass, with scanlines */
+.read dl{position:relative;padding:7px 10px 6px;border-radius:6px;background:radial-gradient(140% 100% at 20% 0,color-mix(in srgb,var(--acc) 10%,transparent),transparent 60%),linear-gradient(180deg,#07040a,#0c0710);box-shadow:var(--well)}
+.read dl::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(165deg,rgba(255,255,255,.07),transparent 40%),repeating-linear-gradient(180deg,rgba(0,0,0,.18) 0 1px,transparent 1px 3px)}
+.read .src{border:0;border-radius:3px;padding:0 6px;font-family:var(--mono);font-weight:600;color:#f3ebf6;background:var(--tape);text-shadow:0 1px 0 rgba(0,0,0,.9),0 -1px 0 rgba(255,255,255,.22);box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 1px 2px rgba(0,0,0,.75)}
+
+/* fields */
+input[type=text],input:not([type]){border:1px solid var(--edge);border-radius:6px;background:linear-gradient(180deg,#07030a,#110a15);box-shadow:var(--well)}
+input:focus{border-color:var(--edge);box-shadow:var(--well),0 0 0 2px color-mix(in srgb,var(--acc) 65%,transparent),0 0 12px -2px var(--acc)}
+
+/* keys: raised, pressed in while held, latched in while on */
+button{border:1px solid var(--edge);border-radius:7px;background:var(--key);text-shadow:0 -1px 0 rgba(0,0,0,.7);box-shadow:var(--key-up);transition:transform .07s,box-shadow .07s,background .12s,color .12s}
+button:hover{border-color:var(--edge);background:var(--key-hi);box-shadow:var(--key-up),0 0 14px -6px var(--acc)}
+button:active:not(:disabled),#infoBtn.on{transform:translateY(2px);background:var(--key-in);box-shadow:var(--key-down)}
+#infoBtn.on{border-color:var(--edge);color:var(--acc)}
+button.mini{border-radius:5px;box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 1px 0 var(--edge),0 3px 6px -2px rgba(0,0,0,.7)}
+button.mini:active:not(:disabled){transform:translateY(1px);box-shadow:var(--key-down)}
+button.solid,#mode3d[aria-pressed=true]{color:var(--acc-ink);border-color:var(--gloss-edge);text-shadow:0 1px 0 rgba(255,255,255,.35);background:var(--gloss);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.65),inset 0 -2px 3px rgba(0,0,0,.25),0 2px 0 var(--gloss-edge),0 6px 14px -5px var(--acc)}
+button.solid:active:not(:disabled),#mode3d[aria-pressed=true]{transform:translateY(2px);box-shadow:inset 0 2px 6px rgba(0,0,0,.5),0 0 12px -3px var(--acc)}
+.zoom button{width:36px;height:36px;border-radius:8px;background:var(--key)}
+.zoom button:hover{background:var(--key-hi)}
+.zoom button:active:not(:disabled){background:var(--key-in)}
+.dims{padding:3px;gap:3px;border:1px solid var(--edge);border-radius:8px;background:rgba(0,0,0,.35);box-shadow:var(--well)}
+.dims button,.dims button+button{border:1px solid var(--edge);border-radius:5px;background:var(--key);box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 1px 0 var(--edge)}
+.dims button:not([aria-pressed=true]):hover{background:var(--key-hi)}
+.dims button[aria-pressed=true]{color:var(--acc-ink);transform:translateY(1px);text-shadow:0 1px 0 rgba(255,255,255,.3);
+  background:linear-gradient(180deg,color-mix(in srgb,var(--acc),#000 12%),color-mix(in srgb,var(--acc),#fff 15%));box-shadow:inset 0 2px 5px rgba(0,0,0,.45),0 0 12px -3px var(--acc)}
+.ctxmenu button,.ctxmenu button:active:not(:disabled){border-radius:6px;background:transparent;box-shadow:none;transform:none;text-shadow:none}
+#pins .hit,#pins .hit:hover,#pins .hit:active{border:0;background:transparent;box-shadow:none;transform:none;text-shadow:none}
+
+/* slider switches */
+.sw i{flex:none;width:38px;height:20px;border:1px solid var(--edge);border-radius:999px;background:linear-gradient(180deg,#07030a,#170e1c);box-shadow:var(--well);transition:background .15s,box-shadow .15s}
+.sw i::after{top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--knob);box-shadow:var(--knob-shadow)}
+.sw input:checked+i{border-color:var(--edge);background:linear-gradient(180deg,color-mix(in srgb,var(--acc),#000 45%),var(--acc));box-shadow:inset 0 2px 5px rgba(0,0,0,.6),0 1px 0 rgba(255,255,255,.08),0 0 12px -3px var(--acc)}
+.sw input:checked+i::after{transform:translateX(18px);background:var(--knob);box-shadow:var(--knob-shadow)}
+
+/* the live LED */
+.livebadge i{width:9px;height:9px;background:radial-gradient(circle at 35% 30%,#fff 0 1px,#b8f55a 2.5px,#5d8f1c);box-shadow:0 0 0 1.5px var(--edge),0 0 8px #b8f55a}
+.livebadge.quiet i{background:radial-gradient(circle at 35% 30%,#fff 0 1px,var(--signal) 2.5px,#8a6411);box-shadow:0 0 0 1.5px var(--edge)}
